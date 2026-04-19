@@ -1,4 +1,4 @@
-﻿import os
+import os
 import requests
 import re
 from groq import Groq
@@ -6,11 +6,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# WhatsApp API Configuration (Moved inside function)
-# Configure Gemini API (Moved inside function)
+# Groq client — instantiated once at module level, not on every request
+_groq_client: Groq | None = None
+
+def _get_groq_client() -> Groq:
+    global _groq_client
+    if _groq_client is None:
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY is not set in environment.")
+        _groq_client = Groq(api_key=api_key)
+    return _groq_client
+
 
 # Kaksha Kendra Knowledge Base and Persona
-SYSTEM_INSTRUCTION = f"""
+SYSTEM_INSTRUCTION = """
 Role & Core Identity:
 You are "Rajat Sir's AI", the official WhatsApp assistant for Kaksha Kendra. Your goal is to guide students to enroll in courses cleanly, quickly, and professionally.
 
@@ -23,12 +33,12 @@ The 4 Golden Rules of Formatting & Flow:
 Conversation Flow & Triggers (FOLLOW STRICTLY):
 
 1. The Greeting (Only when a user says "Hi", "Hello", or is clearly starting a new chat):
-- Text Output: 
+- Text Output:
 "Hey! 🚀 I am Rajat Sir's AI. Welcome to Kaksha Kendra!
 Concept clear kr lo, result hum banwa denge!
 
 Select your class below to see our specialized batches:"
-- Buttons to Display: 
+- Buttons to Display:
 [OPTIONS]
 Class 6-8
 Class 9
@@ -40,7 +50,7 @@ Class 12
 1.5 General Q&A (When a user asks ANY question about Kaksha Kendra, Fees, Rajat Sir, or timings):
 - Action: DO NOT use the Greeting from Step 1. Instead, directly answer their specific question using the KNOWLEDGE BASE below. Keep it under 2 sentences.
 - The Check-In: End with "(Is your doubt cleared?)"
-- Buttons to Display: 
+- Buttons to Display:
 [OPTIONS]
 Class 6-8
 Class 9
@@ -56,7 +66,7 @@ If Class 9 or 10 is selected:
 📐 Maths Only: Master all concepts from the ground up.
 🔬 Science Only: Deep understanding without rote learning.
 🎯 Maths & Science Combo: The ultimate foundation package."
-- Buttons: 
+- Buttons:
 [OPTIONS]
 Maths
 Science
@@ -66,7 +76,7 @@ Maths + Science
 If Class 11 or 12 is selected:
 - Text: "Great! Here is our dedicated advanced batch for your board prep:
 📐 Maths Batch: Master Mathematics from zero level to advanced board level directly under Rajat Sir's guidance."
-- Buttons: 
+- Buttons:
 [OPTIONS]
 Maths
 [/OPTIONS]
@@ -75,7 +85,7 @@ Maths
 If Class 6-8 is selected:
 - Text: "Great! Build a rock-solid base with our junior batches:
 🌱 Foundation Batch: Core concepts for Maths & Science."
-- Buttons: 
+- Buttons:
 [OPTIONS]
 Foundation Batch
 [/OPTIONS]
@@ -86,14 +96,14 @@ Foundation Batch
 🔥 Zero to Hero: We build your concepts completely from scratch. No memorization, pure logic.
 🏆 Board Exam Focus: Get the exact strategies, doubt sessions, and test series that produce toppers.
 
-Tap the links below to explore the full syllabus or enroll instantly! 
+Tap the links below to explore the full syllabus or enroll instantly!
 🛒 **Buy Now:** [Paste Checkout Link Here]
 📖 **About This Course:** [Paste Page Link Here]
 
 (Is your doubt cleared?)"
 
 4. Contact & Unresolved Issues (When asked for contact, or if the user says their doubt is NOT cleared):
-- Text Output: 
+- Text Output:
 "No worries! Let's get you on a call with our team to sort this out instantly.
 • Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
@@ -137,29 +147,28 @@ Strict Constraints & Persona:
 - CONCISENESS: Keep answers strictly under 2 sentences unless providing a list. No fluff.
 """
 
+
 def generate_ai_response(chat_history: list, current_message: str) -> str:
     """
-    Generates an AI response using Groq's Llama 3 API limit issue bypass.
+    Generates an AI response using Groq.
+    chat_history: past messages (role/content dicts), NOT including current_message.
+    current_message: the new user message to respond to.
     """
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        return "System error: Groq API key not configured properly."
-    
-    client = Groq(api_key=api_key)
+    try:
+        client = _get_groq_client()
+    except RuntimeError as e:
+        return f"System error: {e}"
 
-    # Format the past history
-    messages = [
-        {"role": "system", "content": SYSTEM_INSTRUCTION}
-    ]
-    
+    messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+
     for msg in chat_history:
         messages.append({"role": msg["role"], "content": msg["content"]})
-        
+
     messages.append({"role": "user", "content": current_message})
-    
+
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.7,
             max_tokens=500,
@@ -169,97 +178,98 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
         print(f"Error calling Groq API: {e}")
         return "I'm sorry, our AI is extremely busy right now helping other students! Please try again in a moment."
 
-def send_whatsapp_message(to_phone_number: str, message_text: str):
-    """
-    Sends a message back to the user via WhatsApp Graph API.
-    """
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
-    whatsapp_api_url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
 
-    headers = {
-        "Authorization": f"Bearer {whatsapp_token}",
-        "Content-Type": "application/json",
-    }
-    
+def _build_whatsapp_payload(to_phone_number: str, message_text: str) -> dict:
+    """Builds the correct WhatsApp API payload based on message content."""
     options_match = re.search(r'\[OPTIONS\](.*?)\[/OPTIONS\]', message_text, re.DOTALL)
-    
+
     if options_match:
         options_text = options_match.group(1).strip()
         options = [opt.strip() for opt in options_text.split('\n') if opt.strip()]
         main_text = re.sub(r'\[OPTIONS\].*?\[/OPTIONS\]', '', message_text, flags=re.DOTALL).strip()
-        
+
         if not main_text:
             main_text = "Here are your options:"
-            
+
         if len(options) == 0:
-            payload = {
+            return {
                 "messaging_product": "whatsapp",
                 "to": to_phone_number,
                 "type": "text",
                 "text": {"body": message_text},
             }
-        elif len(options) <= 3:
-            # Interactive Buttons (Max 3)
-            buttons = []
-            for i, opt in enumerate(options):
-                buttons.append({
+
+        if len(options) <= 3:
+            buttons = [
+                {
                     "type": "reply",
-                    "reply": {
-                        "id": f"btn_{i}",
-                        "title": opt[:20]
-                    }
-                })
-            payload = {
+                    "reply": {"id": f"btn_{i}", "title": opt[:20]}
+                }
+                for i, opt in enumerate(options)
+            ]
+            return {
                 "messaging_product": "whatsapp",
                 "to": to_phone_number,
                 "type": "interactive",
                 "interactive": {
                     "type": "button",
                     "body": {"text": main_text},
-                    "action": {"buttons": buttons}
-                }
+                    "action": {"buttons": buttons},
+                },
             }
-        else:
-            # Interactive List (For 4 to 10 options)
-            rows = []
-            for i, opt in enumerate(options[:10]):
-                rows.append({
-                    "id": f"list_opt_{i}",
-                    "title": opt[:24]
-                })
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": to_phone_number,
-                "type": "interactive",
-                "interactive": {
-                    "type": "list",
-                    "body": {"text": main_text},
-                    "action": {
-                        "button": "Select Class",
-                        "sections": [
-                            {
-                                "title": "Options",
-                                "rows": rows
-                            }
-                        ]
-                    }
-                }
-            }
-    else:
-        payload = {
+
+        # Interactive List (4–10 options)
+        rows = [
+            {"id": f"list_opt_{i}", "title": opt[:24]}
+            for i, opt in enumerate(options[:10])
+        ]
+        return {
             "messaging_product": "whatsapp",
             "to": to_phone_number,
-            "type": "text",
-            "text": {"body": message_text},
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "body": {"text": main_text},
+                "action": {
+                    "button": "Select an Option",
+                    "sections": [{"title": "Options", "rows": rows}],
+                },
+            },
         }
-    
+
+    # Plain text fallback
+    return {
+        "messaging_product": "whatsapp",
+        "to": to_phone_number,
+        "type": "text",
+        "text": {"body": message_text},
+    }
+
+
+def send_whatsapp_message(to_phone_number: str, message_text: str):
+    """Sends a message back to the user via WhatsApp Graph API."""
+    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+
+    if not whatsapp_token or not phone_id:
+        print("Error: WHATSAPP_TOKEN or WHATSAPP_PHONE_NUMBER_ID not configured.")
+        return None
+
+    whatsapp_api_url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {whatsapp_token}",
+        "Content-Type": "application/json",
+    }
+
+    payload = _build_whatsapp_payload(to_phone_number, message_text)
+
     try:
-        response = requests.post(whatsapp_api_url, headers=headers, json=payload)
+        response = requests.post(whatsapp_api_url, headers=headers, json=payload, timeout=10)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error sending WhatsApp message: {e}")
-        if e.response:
-            print(f"Response details: {e.response.text}")
+        # .response only exists on HTTPError, not on ConnectionError/Timeout
+        if hasattr(e, "response") and e.response is not None:
+            print(f"API response: {e.response.text}")
         return None
