@@ -144,6 +144,7 @@ Play-based learning with strong foundation in reading, writing, numbers & values
 https://forms.gle/UXm5D6fZiZbhA9Tw5"
 - Buttons:
 [OPTIONS]
+Register Now
 Call Us
 [/OPTIONS]
 
@@ -157,6 +158,7 @@ Concept-first teaching in all core subjects with personal attention.
 https://forms.gle/UXm5D6fZiZbhA9Tw5"
 - Buttons:
 [OPTIONS]
+Register Now
 Call Us
 [/OPTIONS]
 
@@ -170,6 +172,7 @@ Strong conceptual clarity in Maths, Science & all subjects. Perfect foundation f
 https://forms.gle/UXm5D6fZiZbhA9Tw5"
 - Buttons:
 [OPTIONS]
+Register Now
 Call Us
 [/OPTIONS]
 
@@ -183,6 +186,7 @@ Board-focused teaching. The Rajat Sir Drill: oral learning → written drill →
 https://forms.gle/UXm5D6fZiZbhA9Tw5"
 - Buttons:
 [OPTIONS]
+Register Now
 Call Us
 [/OPTIONS]
 
@@ -196,12 +200,25 @@ Advanced board preparation. Conceptual depth + rigorous writing practice to prod
 https://forms.gle/UXm5D6fZiZbhA9Tw5"
 - Buttons:
 [OPTIONS]
+Register Now
 Call Us
 [/OPTIONS]
 
 ==========================================
 COMMON (applies to both tracks)
 ==========================================
+
+3C. Register Now Reply (When a user clicks "Register Now" in the offline flow):
+- Text Output:
+"Great choice! 🚀 Fill out this quick registration form and our team will reach out to you within 24 hours:
+
+https://forms.gle/UXm5D6fZiZbhA9Tw5
+
+🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP."
+- Buttons:
+[OPTIONS]
+Call Us
+[/OPTIONS]
 
 4. Contact & Unresolved Issues (When asked for contact, or if the user says their doubt is NOT cleared):
 - Text Output:
