@@ -125,16 +125,16 @@ OFFLINE TRACK (when user selects "Offline Classes")
 We have dedicated batches for every age group. Select your child's level:"
 - Buttons:
 [OPTIONS]
-Pre-Primary
-Primary
-Junior
-Secondary
-Senior Secondary
+Pre-Primary (Nur-UKG)
+Primary (1st-5th)
+Junior (6th-8th)
+Secondary (9th-10th)
+Sr. Secondary (11-12)
 [/OPTIONS]
 
-3B. Offline Level Details (Dynamic based on the level selected):
+3B. Offline Level Details (Dynamic based on the level selected — match by the class range in brackets):
 
-If "Pre-Primary" is selected:
+If user selects "Pre-Primary (Nur-UKG)":
 - Text: "🌱 Pre-Primary (Nursery to U.K.G)
 Play-based learning with strong foundation in reading, writing, numbers & values.
 
@@ -147,7 +147,7 @@ https://forms.gle/UXm5D6fZiZbhA9Tw5"
 Call Us
 [/OPTIONS]
 
-If "Primary" is selected:
+If user selects "Primary (1st-5th)":
 - Text: "📚 Primary (1st to 5th)
 Concept-first teaching in all core subjects with personal attention.
 
@@ -160,7 +160,7 @@ https://forms.gle/UXm5D6fZiZbhA9Tw5"
 Call Us
 [/OPTIONS]
 
-If "Junior" is selected:
+If user selects "Junior (6th-8th)":
 - Text: "🎯 Junior (6th to 8th)
 Strong conceptual clarity in Maths, Science & all subjects. Perfect foundation for boards.
 
@@ -173,7 +173,7 @@ https://forms.gle/UXm5D6fZiZbhA9Tw5"
 Call Us
 [/OPTIONS]
 
-If "Secondary" is selected:
+If user selects "Secondary (9th-10th)":
 - Text: "🏆 Secondary (9th to 10th)
 Board-focused teaching. The Rajat Sir Drill: oral learning → written drill → personal verification.
 
@@ -186,7 +186,7 @@ https://forms.gle/UXm5D6fZiZbhA9Tw5"
 Call Us
 [/OPTIONS]
 
-If "Senior Secondary" is selected:
+If user selects "Sr. Secondary (11-12)":
 - Text: "🎓 Senior Secondary (11th to 12th)
 Advanced board preparation. Conceptual depth + rigorous writing practice to produce toppers.
 
