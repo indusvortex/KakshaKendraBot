@@ -1,6 +1,9 @@
 import os
+import secrets
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException, Response
+from fastapi import FastAPI, Request, HTTPException, Response, Depends
+from fastapi.responses import HTMLResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 
 import database
@@ -10,6 +13,23 @@ load_dotenv()
 
 # Verify Token used by Meta to verify webhook
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "my_secure_verify_token")
+
+# Admin credentials for /admin dashboard
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "kakshakendra2026")
+security = HTTPBasic()
+
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_user = secrets.compare_digest(credentials.username, ADMIN_USERNAME)
+    correct_pass = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not (correct_user and correct_pass):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 # Track processed message IDs to avoid duplicate processing
 # (WhatsApp can retry webhooks, sending the same message twice)
@@ -113,3 +133,133 @@ async def handle_whatsapp_message(request: Request):
 @app.get("/")
 def health_check():
     return {"status": "Bot is running perfectly!"}
+
+
+# ============================================================
+# Admin Dashboard — view all student conversations
+# ============================================================
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_dashboard(user: str = Depends(verify_admin)):
+    """Lists all student conversations with last message preview."""
+    conversations = database.get_all_conversations()
+
+    rows_html = ""
+    if not conversations:
+        rows_html = "<tr><td colspan='5' style='text-align:center;padding:40px;color:#888'>No conversations yet. Send 'Hi' to your bot to start!</td></tr>"
+    else:
+        for c in conversations:
+            preview = (c["last_message"] or "")[:80].replace("<", "&lt;").replace(">", "&gt;")
+            if len(c["last_message"] or "") > 80:
+                preview += "..."
+            role_badge = "BOT" if c["last_role"] == "assistant" else "STUDENT"
+            badge_color = "#8b5cf6" if c["last_role"] == "assistant" else "#10b981"
+            rows_html += f"""
+            <tr onclick="window.location='/admin/chat/{c['sender_id']}'" style="cursor:pointer">
+                <td><strong>+{c['sender_id']}</strong></td>
+                <td><span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{role_badge}</span></td>
+                <td>{preview}</td>
+                <td>{c['message_count']}</td>
+                <td>{c['last_active']}</td>
+            </tr>
+            """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Kaksha Kendra Bot — Admin</title>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <style>
+            body {{ font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }}
+            h1 {{ margin: 0 0 20px; color: #fff; }}
+            .stats {{ background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 20px; }}
+            table {{ width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }}
+            th {{ background: #334155; padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; }}
+            td {{ padding: 14px 12px; border-top: 1px solid #334155; font-size: 14px; }}
+            tr:hover td {{ background: #334155; }}
+            .refresh {{ background: #8b5cf6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }}
+        </style>
+    </head>
+    <body>
+        <h1>🎓 Kaksha Kendra Bot — Admin Dashboard</h1>
+        <div class="stats">
+            <strong>{len(conversations)} student conversations</strong>
+            &nbsp;·&nbsp;
+            <button class="refresh" onclick="location.reload()">↻ Refresh</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Phone</th>
+                    <th>Last From</th>
+                    <th>Last Message Preview</th>
+                    <th>Total Msgs</th>
+                    <th>Last Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+    return html
+
+
+@app.get("/admin/chat/{sender_id}", response_class=HTMLResponse)
+def admin_chat_view(sender_id: str, user: str = Depends(verify_admin)):
+    """Shows the full conversation with a specific student."""
+    messages = database.get_full_conversation(sender_id)
+
+    bubbles_html = ""
+    for msg in messages:
+        is_user = msg["role"] == "user"
+        align = "flex-end" if is_user else "flex-start"
+        bg = "#10b981" if is_user else "#334155"
+        label = "STUDENT" if is_user else "BOT"
+        content = msg["content"].replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        bubbles_html += f"""
+        <div style="display:flex;justify-content:{align};margin:8px 0">
+            <div style="max-width:70%;background:{bg};color:white;padding:10px 14px;border-radius:12px">
+                <div style="font-size:10px;opacity:0.7;margin-bottom:4px">{label} · {msg['timestamp']}</div>
+                <div>{content}</div>
+            </div>
+        </div>
+        """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Chat with +{sender_id}</title>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <style>
+            body {{ font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }}
+            a {{ color: #a78bfa; text-decoration: none; }}
+            h1 {{ margin: 0 0 8px; color: #fff; }}
+            .container {{ max-width: 800px; margin: 0 auto; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <a href="/admin">← Back to all conversations</a>
+            <h1>Chat with +{sender_id}</h1>
+            <div style="color:#94a3b8;margin-bottom:20px">{len(messages)} total messages</div>
+            <div>
+                {bubbles_html}
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+
+@app.get("/admin/api/conversations")
+def admin_api_conversations(user: str = Depends(verify_admin)):
+    """JSON endpoint listing all conversations."""
+    return {"conversations": database.get_all_conversations()}

@@ -49,3 +49,46 @@ def get_recent_messages(sender_id: str, limit: int = 10) -> List[Dict[str, str]]
 
     # Reverse so the list is oldest → newest
     return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
+
+
+def get_all_conversations() -> List[Dict]:
+    """
+    Returns a list of all unique senders with their last message and total count.
+    Sorted by most recent activity.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            '''
+            SELECT
+                sender_id,
+                COUNT(*) as message_count,
+                MAX(timestamp) as last_active,
+                (SELECT content FROM messages m2
+                 WHERE m2.sender_id = m1.sender_id
+                 ORDER BY id DESC LIMIT 1) as last_message,
+                (SELECT role FROM messages m3
+                 WHERE m3.sender_id = m1.sender_id
+                 ORDER BY id DESC LIMIT 1) as last_role
+            FROM messages m1
+            GROUP BY sender_id
+            ORDER BY last_active DESC
+            '''
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_full_conversation(sender_id: str) -> List[Dict]:
+    """Returns ALL messages for a given sender, oldest first."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            '''
+            SELECT role, content, timestamp
+            FROM messages
+            WHERE sender_id = ?
+            ORDER BY id ASC
+            ''',
+            (sender_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
