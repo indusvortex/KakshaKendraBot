@@ -1,8 +1,8 @@
 import os
 import secrets
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException, Response, Depends
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 
@@ -210,17 +210,24 @@ def admin_dashboard(user: str = Depends(verify_admin)):
 
 
 @app.get("/admin/chat/{sender_id}", response_class=HTMLResponse)
-def admin_chat_view(sender_id: str, user: str = Depends(verify_admin)):
-    """Shows the full conversation with a specific student."""
+def admin_chat_view(sender_id: str, sent: str = "", error: str = "", user: str = Depends(verify_admin)):
+    """Shows the full conversation with a specific student + send message form."""
     messages = database.get_full_conversation(sender_id)
 
     bubbles_html = ""
     for msg in messages:
         is_user = msg["role"] == "user"
-        align = "flex-end" if is_user else "flex-start"
-        bg = "#10b981" if is_user else "#334155"
-        label = "STUDENT" if is_user else "BOT"
-        content = msg["content"].replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        is_admin_msg = msg["content"].startswith("[ADMIN] ")
+        content_clean = msg["content"][8:] if is_admin_msg else msg["content"]
+
+        if is_user:
+            align, bg, label = "flex-end", "#10b981", "STUDENT"
+        elif is_admin_msg:
+            align, bg, label = "flex-start", "#f59e0b", "YOU (Manual)"
+        else:
+            align, bg, label = "flex-start", "#334155", "BOT"
+
+        content = content_clean.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
         bubbles_html += f"""
         <div style="display:flex;justify-content:{align};margin:8px 0">
             <div style="max-width:70%;background:{bg};color:white;padding:10px 14px;border-radius:12px">
@@ -230,6 +237,13 @@ def admin_chat_view(sender_id: str, user: str = Depends(verify_admin)):
         </div>
         """
 
+    banner = ""
+    if sent == "1":
+        banner = '<div style="background:#10b981;color:white;padding:10px;border-radius:6px;margin-bottom:16px">✓ Message sent successfully!</div>'
+    elif error:
+        err_clean = error.replace("<", "&lt;").replace(">", "&gt;")
+        banner = f'<div style="background:#dc2626;color:white;padding:10px;border-radius:6px;margin-bottom:16px">✗ Failed: {err_clean}</div>'
+
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -238,10 +252,17 @@ def admin_chat_view(sender_id: str, user: str = Depends(verify_admin)):
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <style>
-            body {{ font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }}
+            body {{ font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; padding-bottom: 140px; }}
             a {{ color: #a78bfa; text-decoration: none; }}
             h1 {{ margin: 0 0 8px; color: #fff; }}
             .container {{ max-width: 800px; margin: 0 auto; }}
+            .send-box {{ position: fixed; bottom: 0; left: 0; right: 0; background: #1e293b; padding: 16px; border-top: 1px solid #334155; }}
+            .send-form {{ max-width: 800px; margin: 0 auto; display: flex; gap: 8px; }}
+            .send-form textarea {{ flex: 1; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: 10px; resize: none; font-family: inherit; font-size: 14px; min-height: 50px; }}
+            .send-form button {{ background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }}
+            .send-form button:hover {{ background: #7c3aed; }}
+            .send-form button:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+            .legend {{ font-size: 11px; color: #64748b; margin-top: 8px; }}
         </style>
     </head>
     <body>
@@ -249,14 +270,57 @@ def admin_chat_view(sender_id: str, user: str = Depends(verify_admin)):
             <a href="/admin">← Back to all conversations</a>
             <h1>Chat with +{sender_id}</h1>
             <div style="color:#94a3b8;margin-bottom:20px">{len(messages)} total messages</div>
+            {banner}
             <div>
                 {bubbles_html}
             </div>
         </div>
+
+        <div class="send-box">
+            <form class="send-form" method="POST" action="/admin/chat/{sender_id}/send">
+                <textarea name="message" placeholder="Type your message... (will be sent as +{sender_id})" required maxlength="4000"></textarea>
+                <button type="submit">Send</button>
+            </form>
+            <div class="legend" style="max-width:800px;margin:8px auto 0">
+                💡 Manual messages from you appear in <span style="color:#f59e0b">orange</span>. Bot messages appear in <span style="color:#94a3b8">gray</span>.
+            </div>
+        </div>
+
+        <script>
+            // Auto-scroll to bottom on load
+            window.scrollTo(0, document.body.scrollHeight);
+            // Allow Ctrl+Enter to submit
+            document.querySelector('textarea').addEventListener('keydown', function(e) {{
+                if (e.ctrlKey && e.key === 'Enter') {{
+                    e.target.form.submit();
+                }}
+            }});
+        </script>
     </body>
     </html>
     """
     return html
+
+
+@app.post("/admin/chat/{sender_id}/send")
+def admin_send_message(sender_id: str, message: str = Form(...), user: str = Depends(verify_admin)):
+    """Sends a manual message from admin to a student via WhatsApp."""
+    message = message.strip()
+    if not message:
+        return RedirectResponse(url=f"/admin/chat/{sender_id}?error=Empty+message", status_code=303)
+
+    result = send_whatsapp_message(sender_id, message)
+
+    if result is None:
+        return RedirectResponse(
+            url=f"/admin/chat/{sender_id}?error=Failed+to+send+(check+logs)",
+            status_code=303,
+        )
+
+    # Save to DB with [ADMIN] prefix so we can render it differently
+    database.save_message(sender_id, "assistant", f"[ADMIN] {message}")
+
+    return RedirectResponse(url=f"/admin/chat/{sender_id}?sent=1", status_code=303)
 
 
 @app.get("/admin/api/conversations")
