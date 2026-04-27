@@ -3,6 +3,7 @@ uvicorn
 requests
 python-dotenv
 groq
+google-genai
 pydantic>=2.6.1
 pydantic-settings
 python-multipart

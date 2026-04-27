@@ -19,6 +19,57 @@ def _get_groq_client() -> Groq:
     return _groq_client
 
 
+# Gemini client — lazy-loaded fallback when Groq is rate-limited
+_gemini_client = None
+
+def _get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return None
+        try:
+            from google import genai
+            _gemini_client = genai.Client(api_key=api_key)
+        except ImportError:
+            print("google-genai package not installed; Gemini fallback unavailable.")
+            return None
+    return _gemini_client
+
+
+def _generate_with_gemini(messages: list) -> str | None:
+    """Fallback to Gemini when Groq fails. Returns None if Gemini is also unavailable."""
+    client = _get_gemini_client()
+    if client is None:
+        return None
+
+    # Gemini has no "system" role — prepend system instruction to the first user message
+    system_text = ""
+    contents = []
+    for msg in messages:
+        if msg["role"] == "system":
+            system_text = msg["content"]
+        elif msg["role"] == "user":
+            user_text = msg["content"]
+            if system_text and not contents:
+                user_text = f"{system_text}\n\n---\n\n{user_text}"
+                system_text = ""
+            contents.append({"role": "user", "parts": [{"text": user_text}]})
+        elif msg["role"] == "assistant":
+            contents.append({"role": "model", "parts": [{"text": msg["content"]}]})
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=contents,
+        )
+        print("[Gemini fallback] Response generated successfully.")
+        return response.text
+    except Exception as e:
+        print(f"[Gemini fallback] Failed: {e}")
+        return None
+
+
 # Kaksha Kendra Knowledge Base and Persona
 SYSTEM_INSTRUCTION = """
 Role & Core Identity:
@@ -276,23 +327,19 @@ Strict Constraints & Persona:
 
 def generate_ai_response(chat_history: list, current_message: str) -> str:
     """
-    Generates an AI response using Groq.
+    Generates an AI response.
+    Tries Groq first, falls back to Gemini if Groq fails (rate limit, errors, etc.).
     chat_history: past messages (role/content dicts), NOT including current_message.
     current_message: the new user message to respond to.
     """
-    try:
-        client = _get_groq_client()
-    except RuntimeError as e:
-        return f"System error: {e}"
-
     messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
-
     for msg in chat_history:
         messages.append({"role": msg["role"], "content": msg["content"]})
-
     messages.append({"role": "user", "content": current_message})
 
+    # ---------- Try Groq first ----------
     try:
+        client = _get_groq_client()
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
@@ -301,8 +348,16 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
         )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"Error calling Groq API: {e}")
-        return "I'm sorry, our AI is extremely busy right now helping other students! Please try again in a moment."
+        print(f"[Groq] Failed: {e}")
+        print("[Groq] Falling back to Gemini...")
+
+    # ---------- Fallback to Gemini ----------
+    gemini_response = _generate_with_gemini(messages)
+    if gemini_response:
+        return gemini_response
+
+    # ---------- Both providers failed ----------
+    return "I'm sorry, our AI is extremely busy right now helping other students! Please try again in a moment."
 
 
 def _build_whatsapp_payload(to_phone_number: str, message_text: str) -> dict:
