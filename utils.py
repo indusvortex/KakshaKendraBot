@@ -498,3 +498,76 @@ def send_whatsapp_message(to_phone_number: str, message_text: str):
         if hasattr(e, "response") and e.response is not None:
             print(f"API response: {e.response.text}")
         return None
+
+
+def upload_media_to_whatsapp(file_bytes: bytes, filename: str, mime_type: str) -> str | None:
+    """
+    Uploads a media file to WhatsApp and returns the media ID.
+    Used by the admin dashboard to send images, videos, audio, or documents.
+    """
+    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    if not whatsapp_token or not phone_id:
+        print("Error: WhatsApp credentials missing.")
+        return None
+
+    url = f"https://graph.facebook.com/v21.0/{phone_id}/media"
+    headers = {"Authorization": f"Bearer {whatsapp_token}"}
+    files = {"file": (filename, file_bytes, mime_type)}
+    data = {"messaging_product": "whatsapp", "type": mime_type}
+
+    try:
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+        response.raise_for_status()
+        return response.json().get("id")
+    except requests.exceptions.RequestException as e:
+        print(f"Error uploading media: {e}")
+        if hasattr(e, "response") and e.response is not None:
+            print(f"API response: {e.response.text}")
+        return None
+
+
+def send_whatsapp_media(
+    to_phone: str,
+    media_id: str,
+    media_type: str,
+    caption: str | None = None,
+    filename: str | None = None,
+) -> bool:
+    """
+    Sends a previously uploaded media file to a student.
+    media_type: 'image', 'video', 'audio', or 'document'
+    """
+    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    if not whatsapp_token or not phone_id:
+        return False
+
+    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {whatsapp_token}",
+        "Content-Type": "application/json",
+    }
+
+    media_obj = {"id": media_id}
+    if caption and media_type in ("image", "video", "document"):
+        media_obj["caption"] = caption
+    if filename and media_type == "document":
+        media_obj["filename"] = filename
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": media_type,
+        media_type: media_obj,
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending media: {e}")
+        if hasattr(e, "response") and e.response is not None:
+            print(f"API response: {e.response.text}")
+        return False

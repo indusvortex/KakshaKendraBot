@@ -1,13 +1,18 @@
 import os
 import secrets
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form
+from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 
 import database
-from utils import generate_ai_response, send_whatsapp_message
+from utils import (
+    generate_ai_response,
+    send_whatsapp_message,
+    upload_media_to_whatsapp,
+    send_whatsapp_media,
+)
 
 load_dotenv()
 
@@ -281,8 +286,20 @@ def admin_chat_view(sender_id: str, sent: str = "", error: str = "", user: str =
                 <textarea name="message" placeholder="Type your message... (will be sent as +{sender_id})" required maxlength="4000"></textarea>
                 <button type="submit">Send</button>
             </form>
+
+            <form class="media-form" method="POST" action="/admin/chat/{sender_id}/send-media" enctype="multipart/form-data" style="max-width:800px;margin:8px auto 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <label style="background:#10b981;color:white;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px">
+                    📎 Choose file
+                    <input type="file" name="file" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" required style="display:none" onchange="document.getElementById('file-name').textContent=this.files[0]?.name||''" />
+                </label>
+                <span id="file-name" style="color:#94a3b8;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+                <input type="text" name="caption" placeholder="Caption (optional)" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:13px;flex:1;min-width:120px" maxlength="1024" />
+                <button type="submit" style="background:#10b981;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">Send Media</button>
+            </form>
+
             <div class="legend" style="max-width:800px;margin:8px auto 0">
                 💡 Manual messages from you appear in <span style="color:#f59e0b">orange</span>. Bot messages appear in <span style="color:#94a3b8">gray</span>.
+                Images/videos/docs up to 100MB.
             </div>
         </div>
 
@@ -319,6 +336,62 @@ def admin_send_message(sender_id: str, message: str = Form(...), user: str = Dep
 
     # Save to DB with [ADMIN] prefix so we can render it differently
     database.save_message(sender_id, "assistant", f"[ADMIN] {message}")
+
+    return RedirectResponse(url=f"/admin/chat/{sender_id}?sent=1", status_code=303)
+
+
+@app.post("/admin/chat/{sender_id}/send-media")
+async def admin_send_media(
+    sender_id: str,
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+    user: str = Depends(verify_admin),
+):
+    """Uploads a media file to WhatsApp and sends it to the student."""
+    file_bytes = await file.read()
+    if not file_bytes:
+        return RedirectResponse(url=f"/admin/chat/{sender_id}?error=Empty+file", status_code=303)
+
+    mime_type = file.content_type or "application/octet-stream"
+    filename = file.filename or "file"
+
+    # Determine media type for WhatsApp from MIME
+    if mime_type.startswith("image/"):
+        media_type = "image"
+    elif mime_type.startswith("video/"):
+        media_type = "video"
+    elif mime_type.startswith("audio/"):
+        media_type = "audio"
+    else:
+        media_type = "document"
+
+    # Step 1: Upload to WhatsApp to get a media ID
+    media_id = upload_media_to_whatsapp(file_bytes, filename, mime_type)
+    if not media_id:
+        return RedirectResponse(
+            url=f"/admin/chat/{sender_id}?error=Upload+failed+(check+logs)",
+            status_code=303,
+        )
+
+    # Step 2: Send the media to the student
+    success = send_whatsapp_media(
+        sender_id,
+        media_id,
+        media_type,
+        caption=caption.strip() or None,
+        filename=filename if media_type == "document" else None,
+    )
+    if not success:
+        return RedirectResponse(
+            url=f"/admin/chat/{sender_id}?error=Send+failed+(check+logs)",
+            status_code=303,
+        )
+
+    # Step 3: Log it in the chat history so admin can see what was sent
+    log_message = f"[ADMIN] [Sent {media_type}: {filename}]"
+    if caption.strip():
+        log_message += f" — {caption.strip()}"
+    database.save_message(sender_id, "assistant", log_message)
 
     return RedirectResponse(url=f"/admin/chat/{sender_id}?sent=1", status_code=303)
 

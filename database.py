@@ -1,8 +1,16 @@
+import os
 import sqlite3
-from datetime import datetime
+from pathlib import Path
 from typing import List, Dict
 
-DB_PATH = "whatsapp_bot.db"
+# Use a persistent path if DATABASE_PATH env var is set (e.g. /data/whatsapp_bot.db on Railway Volume).
+# Falls back to local file for development.
+DB_PATH = os.getenv("DATABASE_PATH", "whatsapp_bot.db")
+
+# Make sure the parent directory exists when DB_PATH points to a mounted volume
+_db_dir = Path(DB_PATH).parent
+if str(_db_dir) and str(_db_dir) != ".":
+    _db_dir.mkdir(parents=True, exist_ok=True)
 
 
 def init_db():
