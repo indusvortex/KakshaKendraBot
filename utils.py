@@ -70,6 +70,44 @@ def _generate_with_gemini(messages: list) -> str | None:
         return None
 
 
+# Cerebras client — final fallback when Groq AND Gemini both fail
+_cerebras_client = None
+
+def _get_cerebras_client():
+    global _cerebras_client
+    if _cerebras_client is None:
+        api_key = os.getenv("CEREBRAS_API_KEY")
+        if not api_key:
+            return None
+        try:
+            from cerebras.cloud.sdk import Cerebras
+            _cerebras_client = Cerebras(api_key=api_key)
+        except ImportError:
+            print("cerebras-cloud-sdk package not installed; Cerebras fallback unavailable.")
+            return None
+    return _cerebras_client
+
+
+def _generate_with_cerebras(messages: list) -> str | None:
+    """Final fallback to Cerebras. Uses same OpenAI-style messages as Groq."""
+    client = _get_cerebras_client()
+    if client is None:
+        return None
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=500,
+        )
+        print("[Cerebras fallback] Response generated successfully.")
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"[Cerebras fallback] Failed: {e}")
+        return None
+
+
 # Kaksha Kendra Knowledge Base and Persona
 SYSTEM_INSTRUCTION = """
 Role & Core Identity:
@@ -327,8 +365,8 @@ Strict Constraints & Persona:
 
 def generate_ai_response(chat_history: list, current_message: str) -> str:
     """
-    Generates an AI response.
-    Tries Groq first, falls back to Gemini if Groq fails (rate limit, errors, etc.).
+    Generates an AI response with a 3-provider fallback chain:
+        Groq -> Gemini -> Cerebras
     chat_history: past messages (role/content dicts), NOT including current_message.
     current_message: the new user message to respond to.
     """
@@ -337,7 +375,7 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": current_message})
 
-    # ---------- Try Groq first ----------
+    # ---------- 1. Try Groq first ----------
     try:
         client = _get_groq_client()
         response = client.chat.completions.create(
@@ -351,12 +389,18 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
         print(f"[Groq] Failed: {e}")
         print("[Groq] Falling back to Gemini...")
 
-    # ---------- Fallback to Gemini ----------
+    # ---------- 2. Fallback to Gemini ----------
     gemini_response = _generate_with_gemini(messages)
     if gemini_response:
         return gemini_response
+    print("[Gemini] Failed too. Falling back to Cerebras...")
 
-    # ---------- Both providers failed ----------
+    # ---------- 3. Final fallback to Cerebras ----------
+    cerebras_response = _generate_with_cerebras(messages)
+    if cerebras_response:
+        return cerebras_response
+
+    # ---------- All three providers failed ----------
     return "I'm sorry, our AI is extremely busy right now helping other students! Please try again in a moment."
 
 

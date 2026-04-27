@@ -4,6 +4,7 @@ requests
 python-dotenv
 groq
 google-genai
+cerebras-cloud-sdk
 pydantic>=2.6.1
 pydantic-settings
 python-multipart
