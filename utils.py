@@ -229,15 +229,9 @@ Play-based learning with strong foundation in reading, writing, numbers & values
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-🚀 Register Now:
-https://forms.gle/UXm5D6fZiZbhA9Tw5
-
-📞 Or tap to call us directly:
-+91 75798 52528"
-- Buttons:
-[OPTIONS]
-Register Now
-[/OPTIONS]
+📞 Tap to call us directly: +91 75798 52528"
+- Button:
+[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
 
 If user selects "Primary (1st-5th)":
 - Text: "📚 Primary (1st to 5th)
@@ -245,15 +239,9 @@ Concept-first teaching in all core subjects with personal attention.
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-🚀 Register Now:
-https://forms.gle/UXm5D6fZiZbhA9Tw5
-
-📞 Or tap to call us directly:
-+91 75798 52528"
-- Buttons:
-[OPTIONS]
-Register Now
-[/OPTIONS]
+📞 Tap to call us directly: +91 75798 52528"
+- Button:
+[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
 
 If user selects "Junior (6th-8th)":
 - Text: "🎯 Junior (6th to 8th)
@@ -261,15 +249,9 @@ Strong conceptual clarity in Maths, Science & all subjects. Perfect foundation f
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-🚀 Register Now:
-https://forms.gle/UXm5D6fZiZbhA9Tw5
-
-📞 Or tap to call us directly:
-+91 75798 52528"
-- Buttons:
-[OPTIONS]
-Register Now
-[/OPTIONS]
+📞 Tap to call us directly: +91 75798 52528"
+- Button:
+[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
 
 If user selects "Secondary (9th-10th)":
 - Text: "🏆 Secondary (9th to 10th)
@@ -277,15 +259,9 @@ Board-focused teaching. The Rajat Sir Drill: oral learning → written drill →
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-🚀 Register Now:
-https://forms.gle/UXm5D6fZiZbhA9Tw5
-
-📞 Or tap to call us directly:
-+91 75798 52528"
-- Buttons:
-[OPTIONS]
-Register Now
-[/OPTIONS]
+📞 Tap to call us directly: +91 75798 52528"
+- Button:
+[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
 
 If user selects "Sr. Secondary (11-12)":
 - Text: "🎓 Senior Secondary (11th to 12th)
@@ -293,31 +269,23 @@ Advanced board preparation. Conceptual depth + rigorous writing practice to prod
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-🚀 Register Now:
-https://forms.gle/UXm5D6fZiZbhA9Tw5
-
-📞 Or tap to call us directly:
-+91 75798 52528"
-- Buttons:
-[OPTIONS]
-Register Now
-[/OPTIONS]
+📞 Tap to call us directly: +91 75798 52528"
+- Button:
+[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
 
 ==========================================
 COMMON (applies to both tracks)
 ==========================================
 
-3C. Register Now Reply (When a user clicks "Register Now" in the offline flow):
+3C. Register Now Reply (Only used if a user types "Register Now" as text — in the new flow the button itself opens the form, so this is rarely triggered):
 - Text Output:
-"Great choice! 🚀 Fill out this quick registration form and our team will reach out to you within 24 hours:
-
-https://forms.gle/UXm5D6fZiZbhA9Tw5
+"Great choice! 🚀 Tap below to fill the registration form. Our team will reach out within 24 hours.
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-📞 Or tap to call us directly:
-+91 75798 52528"
-- No buttons needed (the phone number is tappable)
+📞 Tap to call us directly: +91 75798 52528"
+- Button:
+[CTA_URL display="🚀 Open Form" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
 
 4. Contact & Unresolved Issues (When asked for contact, or if the user says their doubt is NOT cleared):
 - Text Output:
@@ -415,6 +383,38 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
 
 def _build_whatsapp_payload(to_phone_number: str, message_text: str) -> dict:
     """Builds the correct WhatsApp API payload based on message content."""
+
+    # ---------- CTA URL button (single URL action button) ----------
+    # Format: [CTA_URL display="Register Now" url="https://..."]
+    cta_match = re.search(
+        r'\[CTA_URL\s+display="([^"]+)"\s+url="([^"]+)"\]',
+        message_text,
+    )
+    if cta_match:
+        display_text = cta_match.group(1).strip()[:20]
+        url = cta_match.group(2).strip()
+        body_text = re.sub(
+            r'\[CTA_URL[^\]]*\]', '', message_text
+        ).strip()
+        if not body_text:
+            body_text = "Tap below to continue:"
+        return {
+            "messaging_product": "whatsapp",
+            "to": to_phone_number,
+            "type": "interactive",
+            "interactive": {
+                "type": "cta_url",
+                "body": {"text": body_text},
+                "action": {
+                    "name": "cta_url",
+                    "parameters": {
+                        "display_text": display_text,
+                        "url": url,
+                    },
+                },
+            },
+        }
+
     options_match = re.search(r'\[OPTIONS\](.*?)\[/OPTIONS\]', message_text, re.DOTALL)
 
     if options_match:
