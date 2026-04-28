@@ -58,9 +58,11 @@ def _generate_with_gemini(messages: list) -> str | None:
         elif msg["role"] == "assistant":
             contents.append({"role": "model", "parts": [{"text": msg["content"]}]})
 
+    # gemini-2.0-flash has higher free-tier limits than 2.5-flash:
+    # 15 RPM vs 5 RPM, and 1500 RPD vs 250 RPD.
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=contents,
         )
         print("[Gemini fallback] Response generated successfully.")
@@ -94,9 +96,11 @@ def _generate_with_cerebras(messages: list) -> str | None:
     if client is None:
         return None
 
+    # Use the 8B model — universally accessible on Cerebras free tier.
+    # 70B model often requires waitlist/upgrade.
     try:
         response = client.chat.completions.create(
-            model="llama3.3-70b",
+            model="llama3.1-8b",
             messages=messages,
             temperature=0.7,
             max_tokens=500,
