@@ -382,16 +382,17 @@ def admin_chat_view(sender_id: str, sent: str = "", error: str = "", user: str =
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <style>
-            body {{ font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; padding-bottom: 140px; }}
+            body {{ font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; padding-bottom: 220px; }}
             a {{ color: #a78bfa; text-decoration: none; }}
             h1 {{ margin: 0 0 8px; color: #fff; }}
             .container {{ max-width: 800px; margin: 0 auto; }}
-            .send-box {{ position: fixed; bottom: 0; left: 0; right: 0; background: #1e293b; padding: 16px; border-top: 1px solid #334155; }}
-            .send-form {{ max-width: 800px; margin: 0 auto; display: flex; gap: 8px; }}
-            .send-form textarea {{ flex: 1; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: 10px; resize: none; font-family: inherit; font-size: 14px; min-height: 50px; }}
-            .send-form button {{ background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }}
-            .send-form button:hover {{ background: #7c3aed; }}
-            .send-form button:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+            .send-box {{ position: fixed; bottom: 0; left: 0; right: 0; background: #1e293b; padding: 14px 16px; border-top: 1px solid #334155; }}
+            .send-form {{ max-width: 800px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }}
+            .send-form textarea {{ flex: 1; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 22px; padding: 12px 16px; resize: none; font-family: inherit; font-size: 14px; min-height: 22px; max-height: 120px; line-height: 1.4; }}
+            .icon-btn {{ background: #8b5cf6; color: white; border: none; width: 46px; height: 46px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.15s; }}
+            .icon-btn:hover {{ background: #7c3aed; }}
+            .icon-btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+            .icon-btn svg {{ width: 20px; height: 20px; fill: white; }}
             .legend {{ font-size: 11px; color: #64748b; margin-top: 8px; }}
         </style>
     </head>
@@ -413,23 +414,26 @@ def admin_chat_view(sender_id: str, sent: str = "", error: str = "", user: str =
 
         <div class="send-box">
             <form class="send-form" method="POST" action="/admin/chat/{sender_id}/send">
-                <textarea name="message" placeholder="Type your message... (will be sent as +{sender_id})" required maxlength="4000"></textarea>
-                <button type="submit">Send</button>
+                <textarea name="message" placeholder="Type your message..." required maxlength="4000"></textarea>
+                <button type="submit" class="icon-btn" title="Send message" aria-label="Send message">
+                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
             </form>
 
-            <form class="media-form" method="POST" action="/admin/chat/{sender_id}/send-media" enctype="multipart/form-data" style="max-width:800px;margin:8px auto 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <label style="background:#10b981;color:white;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px">
-                    📎 Choose file
+            <form class="media-form" method="POST" action="/admin/chat/{sender_id}/send-media" enctype="multipart/form-data" style="max-width:800px;margin:10px auto 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <label style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:9px 14px;border-radius:22px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:6px">
+                    📎 <span>Choose file</span>
                     <input type="file" name="file" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" required style="display:none" onchange="document.getElementById('file-name').textContent=this.files[0]?.name||''" />
                 </label>
-                <span id="file-name" style="color:#94a3b8;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-                <input type="text" name="caption" placeholder="Caption (optional)" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:13px;flex:1;min-width:120px" maxlength="1024" />
-                <button type="submit" style="background:#10b981;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">Send Media</button>
+                <span id="file-name" style="color:#94a3b8;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"></span>
+                <input type="text" name="caption" placeholder="Caption (optional)" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:22px;padding:9px 14px;font-size:13px;flex:1;min-width:120px" maxlength="1024" />
+                <button type="submit" class="icon-btn" style="background:#10b981" title="Send media" aria-label="Send media">
+                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
             </form>
 
             <div class="legend" style="max-width:800px;margin:8px auto 0">
-                💡 Manual messages from you appear in <span style="color:#f59e0b">orange</span>. Bot messages appear in <span style="color:#94a3b8">gray</span>.
-                Images/videos/docs up to 100MB.
+                💡 Manual messages appear in <span style="color:#f59e0b">orange</span>. Bot messages in <span style="color:#94a3b8">gray</span>. Media up to 100MB.
             </div>
         </div>
 
