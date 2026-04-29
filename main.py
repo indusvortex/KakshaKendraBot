@@ -1,6 +1,7 @@
 import os
 import secrets
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -13,6 +14,21 @@ from utils import (
     upload_media_to_whatsapp,
     send_whatsapp_media,
 )
+
+# India Standard Time = UTC+5:30
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def to_ist(utc_str: str | None, fmt: str = "%d %b %Y, %I:%M %p") -> str:
+    """Converts SQLite-stored UTC timestamp string to IST formatted string."""
+    if not utc_str:
+        return ""
+    try:
+        dt_utc = datetime.strptime(utc_str.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+        return dt_utc.astimezone(IST).strftime(fmt)
+    except Exception:
+        return utc_str
 
 load_dotenv()
 
@@ -244,7 +260,7 @@ def admin_dashboard(user: str = Depends(verify_admin)):
                 <td><span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{role_badge}</span>{new_badge}</td>
                 <td>{preview}</td>
                 <td>{c['message_count']}</td>
-                <td style="font-size:12px;color:#94a3b8">{c['last_active']}</td>
+                <td style="font-size:12px;color:#94a3b8">{to_ist(c['last_active'])}</td>
             </tr>
             """
 
@@ -340,10 +356,11 @@ def admin_chat_view(sender_id: str, sent: str = "", error: str = "", user: str =
             )
             buttons_html = f'<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.15);padding-top:6px">{chips}</div>'
 
+        ts = to_ist(msg['timestamp'], "%d %b, %I:%M %p")
         bubbles_html += f"""
         <div style="display:flex;justify-content:{align};margin:8px 0">
             <div style="max-width:70%;background:{bg};color:white;padding:10px 14px;border-radius:12px">
-                <div style="font-size:10px;opacity:0.7;margin-bottom:4px">{label} · {msg['timestamp']}</div>
+                <div style="font-size:10px;opacity:0.7;margin-bottom:4px">{label} · {ts} IST</div>
                 <div>{content}</div>
                 {buttons_html}
             </div>
