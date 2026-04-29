@@ -81,6 +81,14 @@ async def handle_whatsapp_message(request: Request):
                 for change in entry.get("changes", []):
                     value = change.get("value", {})
 
+                    # Capture contact display name (sent in webhook payload alongside messages)
+                    contacts_by_wa_id = {}
+                    for contact in value.get("contacts", []):
+                        wa_id = contact.get("wa_id")
+                        name = contact.get("profile", {}).get("name")
+                        if wa_id and name:
+                            contacts_by_wa_id[wa_id] = name
+
                     if "messages" in value:
                         for message in value["messages"]:
                             # Deduplicate: skip if we already processed this message
@@ -95,6 +103,10 @@ async def handle_whatsapp_message(request: Request):
                                     processed_message_ids.clear()
 
                             sender_id = message["from"]
+
+                            # Save / update the student's display name for the dashboard
+                            if sender_id in contacts_by_wa_id:
+                                database.upsert_contact(sender_id, contacts_by_wa_id[sender_id])
 
                             if message["type"] == "text":
                                 message_text = message["text"]["body"]
@@ -144,30 +156,102 @@ def health_check():
 # Admin Dashboard — view all student conversations
 # ============================================================
 
+def _initials_avatar(name: str | None, phone: str) -> str:
+    """Returns a small HTML <span> with initials or phone digits as a colored avatar."""
+    if name and name.strip():
+        parts = name.strip().split()
+        initials = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper()
+    else:
+        initials = phone[-2:] if len(phone) >= 2 else phone
+    # Hash phone -> color so each student gets a consistent color
+    color_palette = ["#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6"]
+    color = color_palette[sum(ord(c) for c in phone) % len(color_palette)]
+    return (
+        f'<span style="display:inline-flex;align-items:center;justify-content:center;'
+        f'width:36px;height:36px;border-radius:50%;background:{color};color:white;'
+        f'font-weight:600;font-size:13px;flex-shrink:0">{initials}</span>'
+    )
+
+
+def _clean_message_text(text: str):
+    """
+    Strips [OPTIONS]...[/OPTIONS] and [CTA_URL ...] tags from a saved bot message
+    so the admin dashboard shows the human-readable body + button chips separately.
+    Returns (clean_text, list_of_button_labels).
+    """
+    import re as _re
+
+    buttons = []
+
+    options_match = _re.search(r'\[OPTIONS\](.*?)\[/OPTIONS\]', text, _re.DOTALL)
+    if options_match:
+        for line in options_match.group(1).strip().split("\n"):
+            line = line.strip()
+            if line:
+                buttons.append(line)
+        text = _re.sub(r'\[OPTIONS\].*?\[/OPTIONS\]', '', text, flags=_re.DOTALL)
+
+    cta_match = _re.search(r'\[CTA_URL\s+display="([^"]+)"\s+url="([^"]+)"\]', text)
+    if cta_match:
+        buttons.append(f'🔗 {cta_match.group(1)}')
+        text = _re.sub(r'\[CTA_URL[^\]]*\]', '', text)
+
+    return text.strip(), buttons
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard(user: str = Depends(verify_admin)):
     """Lists all student conversations with last message preview."""
     conversations = database.get_all_conversations()
 
     rows_html = ""
+    unread_count = 0
     if not conversations:
         rows_html = "<tr><td colspan='5' style='text-align:center;padding:40px;color:#888'>No conversations yet. Send 'Hi' to your bot to start!</td></tr>"
     else:
         for c in conversations:
-            preview = (c["last_message"] or "")[:80].replace("<", "&lt;").replace(">", "&gt;")
-            if len(c["last_message"] or "") > 80:
+            raw_msg = c["last_message"] or ""
+            clean_text, _btns = _clean_message_text(raw_msg)
+            preview = clean_text[:80].replace("<", "&lt;").replace(">", "&gt;")
+            if len(clean_text) > 80:
                 preview += "..."
+
             role_badge = "BOT" if c["last_role"] == "assistant" else "STUDENT"
             badge_color = "#8b5cf6" if c["last_role"] == "assistant" else "#10b981"
+
+            new_badge = ''
+            row_bg = ''
+            if c.get("unread"):
+                unread_count += 1
+                new_badge = '<span style="background:#ef4444;color:white;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:8px">NEW</span>'
+                row_bg = 'background:#1e293b'
+
+            display_name = c.get("display_name") or ""
+            avatar = _initials_avatar(display_name, c["sender_id"])
+            name_html = (
+                f'<div style="display:flex;align-items:center;gap:10px">'
+                f'{avatar}'
+                f'<div>'
+                f'<div style="font-weight:600">{display_name or "Unknown"}</div>'
+                f'<div style="font-size:11px;color:#94a3b8">+{c["sender_id"]}</div>'
+                f'</div>'
+                f'</div>'
+            )
+
             rows_html += f"""
-            <tr onclick="window.location='/admin/chat/{c['sender_id']}'" style="cursor:pointer">
-                <td><strong>+{c['sender_id']}</strong></td>
-                <td><span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{role_badge}</span></td>
+            <tr onclick="window.location='/admin/chat/{c['sender_id']}'" style="cursor:pointer;{row_bg}">
+                <td>{name_html}</td>
+                <td><span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{role_badge}</span>{new_badge}</td>
                 <td>{preview}</td>
                 <td>{c['message_count']}</td>
-                <td>{c['last_active']}</td>
+                <td style="font-size:12px;color:#94a3b8">{c['last_active']}</td>
             </tr>
             """
+
+    unread_pill = (
+        f'&nbsp;·&nbsp;<span style="background:#ef4444;color:white;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600">{unread_count} unread</span>'
+        if unread_count > 0 else ''
+    )
 
     html = f"""
     <!DOCTYPE html>
@@ -176,13 +260,14 @@ def admin_dashboard(user: str = Depends(verify_admin)):
         <title>Kaksha Kendra Bot — Admin</title>
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta http-equiv="refresh" content="30">
         <style>
             body {{ font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }}
             h1 {{ margin: 0 0 20px; color: #fff; }}
             .stats {{ background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 20px; }}
             table {{ width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }}
             th {{ background: #334155; padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; }}
-            td {{ padding: 14px 12px; border-top: 1px solid #334155; font-size: 14px; }}
+            td {{ padding: 14px 12px; border-top: 1px solid #334155; font-size: 14px; vertical-align: middle; }}
             tr:hover td {{ background: #334155; }}
             .refresh {{ background: #8b5cf6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }}
         </style>
@@ -190,17 +275,18 @@ def admin_dashboard(user: str = Depends(verify_admin)):
     <body>
         <h1>🎓 Kaksha Kendra Bot — Admin Dashboard</h1>
         <div class="stats">
-            <strong>{len(conversations)} student conversations</strong>
+            <strong>{len(conversations)} student conversations</strong>{unread_pill}
             &nbsp;·&nbsp;
             <button class="refresh" onclick="location.reload()">↻ Refresh</button>
+            <span style="font-size:11px;color:#94a3b8;margin-left:8px">(auto-refreshes every 30s)</span>
         </div>
         <table>
             <thead>
                 <tr>
-                    <th>Phone</th>
-                    <th>Last From</th>
-                    <th>Last Message Preview</th>
-                    <th>Total Msgs</th>
+                    <th>Student</th>
+                    <th>Status</th>
+                    <th>Last Message</th>
+                    <th>Total</th>
                     <th>Last Active</th>
                 </tr>
             </thead>
@@ -219,25 +305,47 @@ def admin_chat_view(sender_id: str, sent: str = "", error: str = "", user: str =
     """Shows the full conversation with a specific student + send message form."""
     messages = database.get_full_conversation(sender_id)
 
+    # Mark this chat as read since admin is viewing it now
+    database.mark_chat_read(sender_id)
+
+    # Get display name for the header
+    conversations = database.get_all_conversations()
+    chat_info = next((c for c in conversations if c["sender_id"] == sender_id), {})
+    display_name = chat_info.get("display_name") or "Unknown"
+
     bubbles_html = ""
     for msg in messages:
         is_user = msg["role"] == "user"
         is_admin_msg = msg["content"].startswith("[ADMIN] ")
-        content_clean = msg["content"][8:] if is_admin_msg else msg["content"]
+        raw = msg["content"][8:] if is_admin_msg else msg["content"]
 
         if is_user:
             align, bg, label = "flex-end", "#10b981", "STUDENT"
+            clean_text, btns = raw, []
         elif is_admin_msg:
             align, bg, label = "flex-start", "#f59e0b", "YOU (Manual)"
+            clean_text, btns = raw, []
         else:
             align, bg, label = "flex-start", "#334155", "BOT"
+            # Strip [OPTIONS] / [CTA_URL] tags from bot messages and show buttons as chips
+            clean_text, btns = _clean_message_text(raw)
 
-        content = content_clean.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        content = clean_text.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+
+        buttons_html = ""
+        if btns:
+            chips = "".join(
+                f'<span style="display:inline-block;background:rgba(255,255,255,0.18);padding:3px 10px;border-radius:14px;font-size:11px;margin:3px 4px 0 0">{b[:40].replace("<","&lt;").replace(">","&gt;")}</span>'
+                for b in btns
+            )
+            buttons_html = f'<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.15);padding-top:6px">{chips}</div>'
+
         bubbles_html += f"""
         <div style="display:flex;justify-content:{align};margin:8px 0">
             <div style="max-width:70%;background:{bg};color:white;padding:10px 14px;border-radius:12px">
                 <div style="font-size:10px;opacity:0.7;margin-bottom:4px">{label} · {msg['timestamp']}</div>
                 <div>{content}</div>
+                {buttons_html}
             </div>
         </div>
         """
@@ -273,9 +381,14 @@ def admin_chat_view(sender_id: str, sent: str = "", error: str = "", user: str =
     <body>
         <div class="container">
             <a href="/admin">← Back to all conversations</a>
-            <h1>Chat with +{sender_id}</h1>
-            <div style="color:#94a3b8;margin-bottom:20px">{len(messages)} total messages</div>
-            {banner}
+            <div style="display:flex;align-items:center;gap:12px;margin:16px 0 4px">
+                {_initials_avatar(display_name, sender_id)}
+                <div>
+                    <h1 style="margin:0;font-size:20px">{display_name}</h1>
+                    <div style="color:#94a3b8;font-size:13px">+{sender_id} · {len(messages)} messages</div>
+                </div>
+            </div>
+            <div style="margin:16px 0">{banner}</div>
             <div>
                 {bubbles_html}
             </div>
