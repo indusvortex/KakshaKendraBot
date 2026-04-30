@@ -6,17 +6,59 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Groq client — instantiated once at module level, not on every request
-_groq_client: Groq | None = None
+# Groq clients — supports multiple API keys for rate-limit rotation.
+# Configure as: GROQ_API_KEY (primary), GROQ_API_KEY_2, GROQ_API_KEY_3, ... up to _10
+_groq_clients_cache: list | None = None
 
-def _get_groq_client() -> Groq:
-    global _groq_client
-    if _groq_client is None:
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY is not set in environment.")
-        _groq_client = Groq(api_key=api_key)
-    return _groq_client
+
+def _get_groq_clients() -> list:
+    """Returns a list of Groq clients, one per configured API key."""
+    global _groq_clients_cache
+    if _groq_clients_cache is None:
+        keys = []
+        primary = os.getenv("GROQ_API_KEY")
+        if primary:
+            keys.append(primary)
+        for i in range(2, 11):
+            extra = os.getenv(f"GROQ_API_KEY_{i}")
+            if extra:
+                keys.append(extra)
+        _groq_clients_cache = [Groq(api_key=k) for k in keys]
+        print(f"[Groq] Loaded {len(_groq_clients_cache)} API key(s).")
+    return _groq_clients_cache
+
+
+def _generate_with_groq(messages: list) -> str | None:
+    """
+    Tries each Groq API key in turn. On rate limit (429), moves to the next key.
+    Returns the AI text on success, or None if every key failed.
+    """
+    clients = _get_groq_clients()
+    if not clients:
+        print("[Groq] No API keys configured.")
+        return None
+
+    for i, client in enumerate(clients):
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=500,
+            )
+            if i > 0:
+                print(f"[Groq] Used backup key #{i + 1}")
+            return response.choices[0].message.content
+        except Exception as e:
+            err_str = str(e).lower()
+            if "rate_limit" in err_str or "429" in err_str or "quota" in err_str:
+                print(f"[Groq] Key #{i + 1} rate-limited, trying next key...")
+                continue
+            print(f"[Groq] Key #{i + 1} failed (non-rate-limit): {e}")
+            continue
+
+    print("[Groq] All keys exhausted.")
+    return None
 
 
 # Gemini client — lazy-loaded fallback when Groq is rate-limited
@@ -356,32 +398,24 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": current_message})
 
-    # ---------- 1. Try Groq first ----------
-    try:
-        client = _get_groq_client()
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=500,
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"[Groq] Failed: {e}")
-        print("[Groq] Falling back to Gemini...")
+    # ---------- 1. Try Groq (rotates through all configured keys) ----------
+    groq_response = _generate_with_groq(messages)
+    if groq_response:
+        return groq_response
+    print("[Groq] All keys failed. Falling back to Gemini...")
 
     # ---------- 2. Fallback to Gemini ----------
     gemini_response = _generate_with_gemini(messages)
     if gemini_response:
         return gemini_response
-    print("[Gemini] Failed too. Falling back to Cerebras...")
+    print("[Gemini] Failed. Falling back to Cerebras...")
 
     # ---------- 3. Final fallback to Cerebras ----------
     cerebras_response = _generate_with_cerebras(messages)
     if cerebras_response:
         return cerebras_response
 
-    # ---------- All three providers failed ----------
+    # ---------- All providers failed ----------
     return "I'm sorry, our AI is extremely busy right now helping other students! Please try again in a moment."
 
 
