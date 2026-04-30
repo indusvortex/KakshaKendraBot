@@ -30,6 +30,47 @@ def to_ist(utc_str: str | None, fmt: str = "%d %b %Y, %I:%M %p") -> str:
     except Exception:
         return utc_str
 
+
+def _notify_admin_of_new_student(sender_id: str, name: str | None, first_message: str):
+    """Sends a WhatsApp alert to the admin number when a brand-new student messages the bot.
+
+    Multiple admin numbers can be configured (comma-separated) via ADMIN_NOTIFY_NUMBER.
+    Silently skips if env var is not set.
+    Note: WhatsApp's 24h rule applies — the admin must have messaged the bot in the
+    last 24 hours OR a message template must be approved by Meta.
+    """
+    admin_numbers_raw = os.getenv("ADMIN_NOTIFY_NUMBER", "").strip()
+    if not admin_numbers_raw:
+        return
+
+    admin_numbers = [n.strip().lstrip("+") for n in admin_numbers_raw.split(",") if n.strip()]
+    if not admin_numbers:
+        return
+
+    name_display = (name or "Unknown").strip()
+    msg_preview = first_message.strip()[:200]
+    notification = (
+        f"🔔 *New Student Alert!*\n"
+        f"\n"
+        f"A new student just messaged the bot:\n"
+        f"\n"
+        f"👤 *Name:* {name_display}\n"
+        f"📱 *Number:* +{sender_id}\n"
+        f"💬 *First message:* {msg_preview!r}\n"
+        f"\n"
+        f"📊 Check the admin dashboard to reply."
+    )
+
+    for admin_num in admin_numbers:
+        try:
+            result = send_whatsapp_message(admin_num, notification)
+            if result is not None:
+                print(f"[Notify] Sent new-student alert for +{sender_id} to +{admin_num}")
+            else:
+                print(f"[Notify] Failed to alert +{admin_num} (returned None) — likely 24h window or token issue")
+        except Exception as e:
+            print(f"[Notify] Exception sending alert to +{admin_num}: {e}")
+
 load_dotenv()
 
 # Verify Token used by Meta to verify webhook
@@ -142,6 +183,11 @@ async def handle_whatsapp_message(request: Request):
                             # 1. Fetch past history BEFORE saving current message
                             #    so the current message doesn't appear twice in the AI prompt
                             history = database.get_recent_messages(sender_id, limit=10)
+
+                            # If this is the very first message from this student, alert admin
+                            if not history:
+                                contact_name = contacts_by_wa_id.get(sender_id)
+                                _notify_admin_of_new_student(sender_id, contact_name, message_text)
 
                             # 2. Save current user message to DB
                             database.save_message(sender_id, "user", message_text)
