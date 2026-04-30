@@ -282,8 +282,8 @@ def _clean_message_text(text: str):
 
 # ----------------- Shared CSS for the messenger-style admin -----------------
 _ADMIN_CSS = """
-* { box-sizing: border-box; }
-html, body { height: 100%; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; height: 100dvh; }
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color: #e6edf3;
@@ -315,6 +315,7 @@ a { color: #5288c1; text-decoration: none; }
     display: grid;
     grid-template-columns: 360px 1fr;
     height: 100vh;
+    height: 100dvh;
     gap: 0;
 }
 
@@ -840,12 +841,90 @@ a { color: #5288c1; text-decoration: none; }
     text-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
 
-/* Responsive — stack on mobile */
+/* === Mobile-specific back button (hidden by default on desktop) === */
+.back-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    color: #e6edf3;
+    text-decoration: none;
+    font-size: 22px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+.back-btn:hover, .back-btn:active {
+    background: rgba(82,136,193,0.18);
+    color: #5288c1;
+}
+
+/* === Responsive — phone layout === */
 @media (max-width: 800px) {
-    .app { grid-template-columns: 1fr; }
+    body { overflow: hidden; }
+    .app {
+        grid-template-columns: 1fr;
+        height: 100vh;
+        height: 100dvh;
+    }
     .sidebar { display: var(--sidebar-display, flex); }
     .main { display: var(--main-display, none); }
     body.chat-open { --sidebar-display: none; --main-display: flex; }
+
+    /* Back button: visible on mobile when in a chat */
+    .back-btn { display: inline-flex !important; }
+
+    /* Sidebar header — slightly tighter */
+    .sidebar-header { padding: 14px 14px 12px; }
+    .sidebar-title { font-size: 17px; }
+
+    /* Chat header sticks to top */
+    .main-header {
+        position: sticky;
+        top: 0;
+        padding: 10px 14px;
+        gap: 10px;
+    }
+    .main-header .name { font-size: 15px; }
+    .main-header .sub { font-size: 11px; }
+    .main-header .avatar { width: 38px; height: 38px; font-size: 13px; }
+
+    /* Messages — tighter padding */
+    .messages { padding: 14px 12px; }
+    .bubble { max-width: 85%; padding: 8px 12px 6px; font-size: 14px; }
+    .bubble .content { font-size: 14px; }
+
+    /* Composer — sticks above keyboard */
+    .composer {
+        padding: 10px 12px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom));
+    }
+    .composer textarea {
+        font-size: 16px; /* Prevents iOS zoom on focus */
+        padding: 10px 14px;
+    }
+    .icon-btn { width: 42px; height: 42px; }
+    .icon-btn svg { width: 18px; height: 18px; }
+
+    /* Chat-list items — slightly tighter for phone */
+    .chat-item { padding: 10px 12px; margin: 1px 4px; }
+    .chat-item .avatar { width: 46px; height: 46px; font-size: 15px; }
+    .chat-item .name { font-size: 14px; }
+    .chat-item .preview { font-size: 13px; }
+
+    /* Attach menu — full-width-ish on mobile */
+    .attach-menu {
+        left: 0;
+        right: auto;
+        bottom: 50px;
+        min-width: 220px;
+    }
+
+    /* Banners */
+    .banner { margin: 8px 12px 0; padding: 9px 13px; font-size: 12px; }
 }
 """
 
@@ -932,11 +1011,11 @@ def _render_chat_panel(sender_id: str, sent: str, error: str) -> str:
 
     return f"""
     <div class="main-header">
-        <a href="/admin" style="color:#7d8e9c;text-decoration:none;font-size:18px;display:none" class="back-btn" onclick="document.body.classList.remove('chat-open');return false">←</a>
+        <a href="/admin" class="back-btn" aria-label="Back to chat list">←</a>
         {_avatar_html(display_name, sender_id, 42)}
-        <div style="flex:1">
-            <div class="name">{display_name}</div>
-            <div class="sub">+{sender_id} · {len(messages)} messages</div>
+        <div style="flex:1;min-width:0;overflow:hidden">
+            <div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{display_name}</div>
+            <div class="sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">+{sender_id} · {len(messages)} messages</div>
         </div>
         <form method="POST" action="/admin/chat/{sender_id}/delete" onsubmit="return confirm('Delete entire chat with {display_name}? This cannot be undone.')" style="margin:0">
             <button type="submit" title="Delete chat" aria-label="Delete chat" style="background:rgba(220,38,38,0.15);border:1px solid rgba(220,38,38,0.3);color:#ef4444;width:38px;height:38px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s">
