@@ -919,6 +919,11 @@ def _render_chat_panel(sender_id: str, sent: str, error: str) -> str:
             <div class="name">{display_name}</div>
             <div class="sub">+{sender_id} · {len(messages)} messages</div>
         </div>
+        <form method="POST" action="/admin/chat/{sender_id}/delete" onsubmit="return confirm('Delete entire chat with {display_name}? This cannot be undone.')" style="margin:0">
+            <button type="submit" title="Delete chat" aria-label="Delete chat" style="background:rgba(220,38,38,0.15);border:1px solid rgba(220,38,38,0.3);color:#ef4444;width:38px;height:38px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+        </form>
     </div>
     {banner}
     <div class="messages" id="messages">
@@ -1171,6 +1176,84 @@ async def admin_send_media(
     database.save_message(sender_id, "assistant", log_message)
 
     return RedirectResponse(url=f"/admin?chat={sender_id}&sent=1", status_code=303)
+
+
+@app.post("/admin/chat/{sender_id}/delete")
+def admin_delete_chat(sender_id: str, user: str = Depends(verify_admin)):
+    """Deletes a conversation entirely (messages + contact info)."""
+    deleted = database.delete_chat(sender_id)
+    print(f"[Admin] Deleted chat with +{sender_id} ({deleted} messages)")
+    return RedirectResponse(url=f"/admin?sent=1", status_code=303)
+
+
+@app.get("/call/{number}", response_class=HTMLResponse)
+def call_redirect(number: str):
+    """
+    Public 'tap-to-call' redirect page.
+    Used as a CTA URL button target — when student taps the button in WhatsApp,
+    it opens this page in their browser, which immediately triggers the dialer
+    via tel:+<number>.
+    """
+    # Sanitize: keep digits only
+    clean = "".join(c for c in number if c.isdigit())
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Calling Kaksha Kendra...</title>
+    <meta http-equiv="refresh" content="0; url=tel:+{clean}"/>
+    <style>
+        body {{
+            font-family: -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0a1320, #14202d);
+            color: #e6edf3;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }}
+        .ring {{
+            font-size: 80px;
+            animation: ring 0.6s ease-in-out infinite;
+        }}
+        @keyframes ring {{
+            0%, 100% {{ transform: rotate(-15deg); }}
+            50% {{ transform: rotate(15deg); }}
+        }}
+        h1 {{ margin: 20px 0 8px; font-size: 22px; }}
+        p {{ color: #95a3b1; margin: 4px 0; }}
+        a {{
+            display: inline-block;
+            margin-top: 24px;
+            background: linear-gradient(135deg, #5288c1, #3a6da4);
+            color: white;
+            padding: 14px 28px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: 600;
+            box-shadow: 0 6px 20px rgba(82,136,193,0.4);
+        }}
+    </style>
+</head>
+<body>
+    <div class="ring">📞</div>
+    <h1>Calling Kaksha Kendra</h1>
+    <p>+{clean[:2]} {clean[2:7]} {clean[7:]}</p>
+    <p style="font-size:13px">If your dialer didn't open automatically, tap below:</p>
+    <a href="tel:+{clean}">📞 Call Now</a>
+    <script>
+        // Belt-and-suspenders: also try via JS in case meta-refresh is blocked
+        setTimeout(function() {{
+            window.location.href = "tel:+{clean}";
+        }}, 100);
+    </script>
+</body>
+</html>"""
 
 
 @app.get("/admin/api/conversations")

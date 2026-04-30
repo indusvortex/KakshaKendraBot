@@ -275,9 +275,12 @@ Play-based learning with strong foundation in reading, writing, numbers & values
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-📞 Tap to call us directly: +91 75798 52528"
-- Button:
-[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
+What would you like to do next?"
+- Buttons:
+[OPTIONS]
+Register Now
+Call Us
+[/OPTIONS]
 
 If user selects "Primary (1st-5th)":
 - Text: "📚 Primary (1st to 5th)
@@ -285,9 +288,12 @@ Concept-first teaching in all core subjects with personal attention.
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-📞 Tap to call us directly: +91 75798 52528"
-- Button:
-[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
+What would you like to do next?"
+- Buttons:
+[OPTIONS]
+Register Now
+Call Us
+[/OPTIONS]
 
 If user selects "Junior (6th-8th)":
 - Text: "🎯 Junior (6th to 8th)
@@ -295,9 +301,12 @@ Strong conceptual clarity in Maths, Science & all subjects. Perfect foundation f
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-📞 Tap to call us directly: +91 75798 52528"
-- Button:
-[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
+What would you like to do next?"
+- Buttons:
+[OPTIONS]
+Register Now
+Call Us
+[/OPTIONS]
 
 If user selects "Secondary (9th-10th)":
 - Text: "🏆 Secondary (9th to 10th)
@@ -305,9 +314,12 @@ Board-focused teaching. The Rajat Sir Drill: oral learning → written drill →
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-📞 Tap to call us directly: +91 75798 52528"
-- Button:
-[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
+What would you like to do next?"
+- Buttons:
+[OPTIONS]
+Register Now
+Call Us
+[/OPTIONS]
 
 If user selects "Sr. Secondary (11-12)":
 - Text: "🎓 Senior Secondary (11th to 12th)
@@ -315,33 +327,38 @@ Advanced board preparation. Conceptual depth + rigorous writing practice to prod
 
 🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
 
-📞 Tap to call us directly: +91 75798 52528"
-- Button:
-[CTA_URL display="🚀 Register Now" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
+What would you like to do next?"
+- Buttons:
+[OPTIONS]
+Register Now
+Call Us
+[/OPTIONS]
 
 ==========================================
 COMMON (applies to both tracks)
 ==========================================
 
-3C. Register Now Reply (Only used if a user types "Register Now" as text — in the new flow the button itself opens the form, so this is rarely triggered):
+3C. Register Now Reply (When the user clicks "Register Now" reply button):
 - Text Output:
-"Great choice! 🚀 Tap below to fill the registration form. Our team will reach out within 24 hours.
-
-🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
-
-📞 Tap to call us directly: +91 75798 52528"
+"Great choice! 🚀 Tap the button below to open our registration form. Our team will reach out within 24 hours."
 - Button:
 [CTA_URL display="🚀 Open Form" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
 
+3D. Call Us Reply (When the user clicks "Call Us" reply button):
+- Text Output:
+"Sure! 📞 Tap the button below — your phone's dialer will open with our number ready to call.
+
+🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP."
+- Button:
+[CTA_URL display="📞 Call Now" url="https://web-production-0e9ed.up.railway.app/call/917579852528"]
+
 4. Contact & Unresolved Issues (When asked for contact, or if the user says their doubt is NOT cleared):
 - Text Output:
-"No worries! Let's get you on a call with our team to sort this out instantly.
+"No worries! Tap the button below — your dialer will open with our number ready.
 
-🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP.
-
-📞 Tap the number below to call us directly:
-+91 75798 52528"
-- No buttons needed (the phone number above is tap-to-call)
+🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP."
+- Button:
+[CTA_URL display="📞 Call Now" url="https://web-production-0e9ed.up.railway.app/call/917579852528"]
 
 **LINK DATABASE (USE ONLY FOR ONLINE TRACK — DO NOT SHOW UNLESS THEY REACH STEP 2C):**
 *Class 6-8 Page:* https://www.kakshakendra.com/class-6-8

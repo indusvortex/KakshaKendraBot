@@ -153,3 +153,13 @@ def get_full_conversation(sender_id: str) -> List[Dict]:
             (sender_id,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def delete_chat(sender_id: str) -> int:
+    """Deletes all messages and contact info for a sender. Returns rows deleted."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute('DELETE FROM messages WHERE sender_id = ?', (sender_id,))
+        deleted = cur.rowcount
+        conn.execute('DELETE FROM chats WHERE sender_id = ?', (sender_id,))
+        conn.commit()
+    return deleted
