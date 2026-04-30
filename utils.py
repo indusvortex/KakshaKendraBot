@@ -162,7 +162,7 @@ You are "Rajat Sir's AI", the official WhatsApp assistant for Kaksha Kendra. You
 The 4 Golden Rules of Formatting & Flow:
 1. POINTERS ONLY: Never use long paragraphs. Keep descriptions to 1-2 short bullet points.
 2. BE CRISP: Keep the chat visually clean. Less text means more sales.
-3. THE CHECK-IN: At the end of answering any question, you MUST ask: "(Is your doubt cleared?)" If the user says no, share the contact phone number in tap-to-call format: "📞 Tap to call us: +91 75798 52528"
+3. THE CHECK-IN: At the end of answering any question, you MUST ask: "(Is your doubt cleared?)" If the user says no, share the phone number on its OWN line so WhatsApp makes it tap-to-call: write "📞 Tap to call us:" then a newline then "+91 75798 52528" — the number must be alone on its line, in international format.
 4. NO LONG OR BROKEN URLS: NEVER paste raw URLs in the middle of a sentence and ALWAYS place a link on a new line with no punctuation at the end. DO NOT wrap URLs in [OPTIONS] tags.
 
 Conversation Flow & Triggers (FOLLOW STRICTLY):
@@ -344,21 +344,16 @@ COMMON (applies to both tracks)
 - Button:
 [CTA_URL display="🚀 Open Form" url="https://forms.gle/UXm5D6fZiZbhA9Tw5"]
 
-3D. Call Us Reply (When the user clicks "Call Us" reply button):
-- Text Output:
-"Sure! 📞 Tap the button below — your phone's dialer will open with our number ready to call.
-
-🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP."
-- Button:
-[CTA_URL display="📞 Call Now" url="https://web-production-0e9ed.up.railway.app/call/917579852528"]
+3D. Call Us Reply: Handled automatically by the bot via a Meta-approved WhatsApp template (kaksha_call_us). The bot intercepts "Call Us" replies before they reach you, so you NEVER need to handle them. Do not generate a response when you see "Call Us" — the system will skip you.
 
 4. Contact & Unresolved Issues (When asked for contact, or if the user says their doubt is NOT cleared):
-- Text Output:
-"No worries! Tap the button below — your dialer will open with our number ready.
+- Text Output (no buttons — phone number must be standalone for tap-to-call to work):
+"No worries! 📞 *Tap the number below to call us:*
 
-🏫 Location: Near Police Station, Jain Sahab Crusher, Kanth, UP."
-- Button:
-[CTA_URL display="📞 Call Now" url="https://web-production-0e9ed.up.railway.app/call/917579852528"]
++91 75798 52528
+
+🏫 *Location:* Near Police Station, Jain Sahab Crusher, Kanth, UP."
+- No buttons.
 
 **LINK DATABASE (USE ONLY FOR ONLINE TRACK — DO NOT SHOW UNLESS THEY REACH STEP 2C):**
 *Class 6-8 Page:* https://www.kakshakendra.com/class-6-8
@@ -589,6 +584,44 @@ def upload_media_to_whatsapp(file_bytes: bytes, filename: str, mime_type: str) -
         if hasattr(e, "response") and e.response is not None:
             print(f"API response: {e.response.text}")
         return None
+
+
+def send_whatsapp_template(to_phone: str, template_name: str, language_code: str = "en") -> bool:
+    """
+    Sends a pre-approved WhatsApp template message.
+    Use this for approved templates that have phone-number/URL buttons,
+    which free-form messages cannot have.
+    """
+    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    if not whatsapp_token or not phone_id:
+        return False
+
+    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {whatsapp_token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language_code},
+        },
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response.raise_for_status()
+        print(f"[Template] Sent '{template_name}' to +{to_phone}")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"[Template] Failed to send '{template_name}': {e}")
+        if hasattr(e, "response") and e.response is not None:
+            print(f"API response: {e.response.text}")
+        return False
 
 
 def send_whatsapp_media(

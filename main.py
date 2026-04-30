@@ -11,6 +11,7 @@ import database
 from utils import (
     generate_ai_response,
     send_whatsapp_message,
+    send_whatsapp_template,
     upload_media_to_whatsapp,
     send_whatsapp_media,
 )
@@ -179,6 +180,24 @@ async def handle_whatsapp_message(request: Request):
                                 continue
 
                             print(f"Received message from {sender_id}: {message_text}")
+
+                            # ----- Special intercept: "Call Us" button tap -----
+                            # WhatsApp's reply buttons can't open the dialer directly,
+                            # so when the student clicks "Call Us", we send the
+                            # pre-approved Meta template (which has a real PHONE_NUMBER button).
+                            if message_text.strip().lower() in {"call us", "call now", "call"}:
+                                template_name = os.getenv("CALL_TEMPLATE_NAME", "kaksha_call_us")
+                                template_lang = os.getenv("CALL_TEMPLATE_LANG", "en")
+                                ok = send_whatsapp_template(sender_id, template_name, template_lang)
+                                if ok:
+                                    # Save messages only on success — let AI flow handle it on failure
+                                    database.save_message(sender_id, "user", message_text)
+                                    database.save_message(
+                                        sender_id, "assistant",
+                                        f"[Sent template: {template_name}]"
+                                    )
+                                    continue  # skip the AI step
+                                print(f"[Template] Falling back to AI for 'Call Us' (template failed)")
 
                             # 1. Fetch past history BEFORE saving current message
                             #    so the current message doesn't appear twice in the AI prompt
