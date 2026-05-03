@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 
@@ -1657,9 +1657,22 @@ def admin_settings(user: str = Depends(verify_admin)):
         <title>Settings · Kaksha Kendra Bot</title>
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta name="theme-color" content="#5288c1"/>
+        <link rel="manifest" href="/manifest.json"/>
         <meta http-equiv="refresh" content="30">
         <style>{_ADMIN_CSS}
-            .settings-wrap {{ padding: 20px; overflow-y: auto; max-width: 1100px; margin: 0 auto; width: 100%; }}
+            /* Override the dashboard's no-scroll body for the settings page */
+            html, body {{ height: auto !important; overflow: auto !important; }}
+            body {{ min-height: 100vh; min-height: 100dvh; padding-bottom: 40px; }}
+            .settings-wrap {{ padding: 20px; max-width: 1100px; margin: 0 auto; width: 100%; }}
+            @media (max-width: 800px) {{
+                .settings-wrap {{ padding: 14px; }}
+                .settings-grid {{ gap: 10px; }}
+                .card {{ padding: 14px; }}
+                .card .big {{ font-size: 24px; }}
+                .top-bar h1 {{ font-size: 18px; }}
+                .nav-link {{ padding: 6px 12px; font-size: 12px; }}
+            }}
             .settings-grid {{
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -1970,7 +1983,7 @@ def admin_export_xlsx(user: str = Depends(verify_admin)):
     """
     try:
         from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.styles import Font, PatternFill, Alignment
         from openpyxl.utils import get_column_letter
     except ImportError:
         raise HTTPException(status_code=500, detail="openpyxl not installed; redeploy needed")
@@ -2000,12 +2013,6 @@ def admin_export_xlsx(user: str = Depends(verify_admin)):
     # Style summary sheet
     header_fill = PatternFill(start_color="2B5278", end_color="2B5278", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11)
-    thin_border = Border(
-        left=Side(style="thin", color="CCCCCC"),
-        right=Side(style="thin", color="CCCCCC"),
-        top=Side(style="thin", color="CCCCCC"),
-        bottom=Side(style="thin", color="CCCCCC"),
-    )
 
     for col_num, _ in enumerate(summary_headers, 1):
         cell = ws_sum.cell(row=1, column=col_num)
