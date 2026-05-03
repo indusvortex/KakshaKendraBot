@@ -1,9 +1,11 @@
 import os
+import csv
+import io
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 
@@ -1636,6 +1638,27 @@ def admin_settings(user: str = Depends(verify_admin)):
                     </div>
                 </div>
 
+                <!-- ================= Export Data ================= -->
+                <div class="card">
+                    <h3>📥 Export Data</h3>
+                    <a href="/admin/export/csv" download style="display:flex;align-items:center;gap:10px;padding:12px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:10px;color:#10b981;text-decoration:none;font-weight:600;font-size:13px;margin-bottom:8px;transition:all 0.2s">
+                        <span style="font-size:18px">📄</span>
+                        <div style="flex:1">
+                            <div>Download CSV</div>
+                            <div style="font-size:11px;color:#7d8e9c;font-weight:400">Plain text, opens in Excel</div>
+                        </div>
+                        <span>↓</span>
+                    </a>
+                    <a href="/admin/export/xlsx" download style="display:flex;align-items:center;gap:10px;padding:12px;background:rgba(82,136,193,0.1);border:1px solid rgba(82,136,193,0.3);border-radius:10px;color:#5288c1;text-decoration:none;font-weight:600;font-size:13px;transition:all 0.2s">
+                        <span style="font-size:18px">📊</span>
+                        <div style="flex:1">
+                            <div>Download Excel (.xlsx)</div>
+                            <div style="font-size:11px;color:#7d8e9c;font-weight:400">Formatted, 2 sheets (Summary + Messages)</div>
+                        </div>
+                        <span>↓</span>
+                    </a>
+                </div>
+
                 <!-- ================= Quick Links ================= -->
                 <div class="card">
                     <h3>🔗 Quick Links</h3>
@@ -1662,6 +1685,137 @@ def admin_settings(user: str = Depends(verify_admin)):
     </body>
     </html>
     """
+
+
+@app.get("/admin/export/csv")
+def admin_export_csv(user: str = Depends(verify_admin)):
+    """Exports all chats as a CSV file (one row per message)."""
+    rows = database.get_all_messages_with_contact()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["ID", "Phone", "Name", "Role", "Message", "Timestamp (IST)"])
+    for r in rows:
+        writer.writerow([
+            r["id"],
+            "+" + r["sender_id"],
+            r["display_name"],
+            r["role"],
+            r["content"],
+            to_ist(r["timestamp"], "%Y-%m-%d %H:%M:%S"),
+        ])
+
+    buf.seek(0)
+    filename = f"kakshakendra_chats_{datetime.now(IST).strftime('%Y%m%d_%H%M')}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/admin/export/xlsx")
+def admin_export_xlsx(user: str = Depends(verify_admin)):
+    """
+    Exports all chats as an Excel file with two sheets:
+    1. 'Summary' — one row per student with stats
+    2. 'Messages' — every message in detail
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl not installed; redeploy needed")
+
+    wb = Workbook()
+
+    # ---------- Sheet 1: Summary ----------
+    ws_sum = wb.active
+    ws_sum.title = "Summary"
+
+    summary_headers = ["Phone", "Name", "Total Messages", "Last Active (IST)", "Last Message", "Status"]
+    ws_sum.append(summary_headers)
+
+    conversations = database.get_all_conversations()
+    for c in conversations:
+        last_msg = (c["last_message"] or "")[:200]
+        status = "🔔 NEW" if c.get("unread") else "Read"
+        ws_sum.append([
+            "+" + c["sender_id"],
+            c.get("display_name") or "",
+            c["message_count"],
+            to_ist(c["last_active"], "%Y-%m-%d %H:%M"),
+            last_msg,
+            status,
+        ])
+
+    # Style summary sheet
+    header_fill = PatternFill(start_color="2B5278", end_color="2B5278", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    thin_border = Border(
+        left=Side(style="thin", color="CCCCCC"),
+        right=Side(style="thin", color="CCCCCC"),
+        top=Side(style="thin", color="CCCCCC"),
+        bottom=Side(style="thin", color="CCCCCC"),
+    )
+
+    for col_num, _ in enumerate(summary_headers, 1):
+        cell = ws_sum.cell(row=1, column=col_num)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    # Auto-width columns
+    column_widths_sum = [16, 22, 14, 22, 60, 10]
+    for i, w in enumerate(column_widths_sum, 1):
+        ws_sum.column_dimensions[get_column_letter(i)].width = w
+
+    ws_sum.freeze_panes = "A2"
+
+    # ---------- Sheet 2: All Messages ----------
+    ws_msg = wb.create_sheet(title="Messages")
+    msg_headers = ["ID", "Phone", "Name", "Role", "Message", "Timestamp (IST)"]
+    ws_msg.append(msg_headers)
+
+    rows = database.get_all_messages_with_contact()
+    for r in rows:
+        ws_msg.append([
+            r["id"],
+            "+" + r["sender_id"],
+            r["display_name"],
+            r["role"],
+            r["content"],
+            to_ist(r["timestamp"], "%Y-%m-%d %H:%M:%S"),
+        ])
+
+    for col_num, _ in enumerate(msg_headers, 1):
+        cell = ws_msg.cell(row=1, column=col_num)
+        cell.fill = header_fill
+        cell.font = header_font
+
+    column_widths_msg = [8, 16, 22, 12, 80, 22]
+    for i, w in enumerate(column_widths_msg, 1):
+        ws_msg.column_dimensions[get_column_letter(i)].width = w
+
+    # Wrap text in message column
+    for row in ws_msg.iter_rows(min_row=2, max_col=5, min_col=5):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    ws_msg.freeze_panes = "A2"
+
+    # ---------- Write to bytes ----------
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"kakshakendra_chats_{datetime.now(IST).strftime('%Y%m%d_%H%M')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/call/{number}", response_class=HTMLResponse)

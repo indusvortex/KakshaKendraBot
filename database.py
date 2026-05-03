@@ -165,6 +165,30 @@ def delete_chat(sender_id: str) -> int:
     return deleted
 
 
+def get_all_messages_with_contact() -> List[Dict]:
+    """
+    Returns every message in the database joined with the contact's display name.
+    Ordered chronologically (oldest first). Used for CSV/Excel export.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            '''
+            SELECT
+                m.id,
+                m.sender_id,
+                COALESCE(c.display_name, '') AS display_name,
+                m.role,
+                m.content,
+                m.timestamp
+            FROM messages m
+            LEFT JOIN chats c ON c.sender_id = m.sender_id
+            ORDER BY m.id ASC
+            '''
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_stats() -> Dict:
     """
     Returns aggregate statistics about messages and students:
