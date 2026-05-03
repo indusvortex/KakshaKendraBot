@@ -1661,17 +1661,100 @@ def admin_settings(user: str = Depends(verify_admin)):
         <link rel="manifest" href="/manifest.json"/>
         <meta http-equiv="refresh" content="30">
         <style>{_ADMIN_CSS}
-            /* Override the dashboard's no-scroll body for the settings page */
+            /* Override the dashboard's no-scroll body for settings page */
             html, body {{ height: auto !important; overflow: auto !important; }}
             body {{ min-height: 100vh; min-height: 100dvh; padding-bottom: 40px; }}
             .settings-wrap {{ padding: 20px; max-width: 1100px; margin: 0 auto; width: 100%; }}
+
+            /* Sticky top bar — stays at top while scrolling */
+            .top-bar {{
+                position: sticky;
+                top: 0;
+                z-index: 50;
+                background: rgba(14, 22, 33, 0.85);
+                backdrop-filter: blur(30px) saturate(180%);
+                -webkit-backdrop-filter: blur(30px) saturate(180%);
+                margin: -20px -20px 0;
+                padding: 14px 20px;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
+            }}
+
+            /* === MOBILE — phone-first redesign === */
             @media (max-width: 800px) {{
-                .settings-wrap {{ padding: 14px; }}
-                .settings-grid {{ gap: 10px; }}
+                body {{ padding-bottom: 60px; }}
+                .settings-wrap {{ padding: 0; }}
+                .top-bar {{
+                    margin: 0;
+                    padding: 14px 16px;
+                    border-radius: 0;
+                }}
+                .top-bar h1 {{ font-size: 17px; font-weight: 600; }}
+                .nav-link {{
+                    padding: 8px 14px;
+                    font-size: 12px;
+                    border-radius: 18px;
+                }}
+
+                /* Force single-column on phones, even cards that span 2 */
+                .settings-grid {{
+                    grid-template-columns: 1fr !important;
+                    gap: 12px;
+                    padding: 14px;
+                    margin-top: 6px !important;
+                }}
+                .card[style*="span"] {{ grid-column: 1 !important; }}
+
+                /* Cards: tighter, snappier, native-app feel */
+                .card {{
+                    padding: 16px;
+                    border-radius: 16px;
+                }}
+                .card:hover {{ transform: none; }}  /* No hover transform on touch */
+                .card h3 {{
+                    font-size: 11px;
+                    margin-bottom: 10px;
+                    letter-spacing: 0.08em;
+                }}
+                .card .big {{ font-size: 26px; line-height: 1.0; }}
+                .card .small {{ font-size: 12px; }}
+
+                /* Rows: stack values cleanly, larger touch targets */
+                .row {{
+                    padding: 12px 0;
+                    flex-wrap: wrap;
+                    gap: 4px;
+                }}
+                .row .label {{ font-size: 13px; }}
+                .row .val {{ font-size: 13px; }}
+
+                /* Buttons in cards stack on tiny screens */
+                .card a, .card button {{
+                    min-height: 44px;  /* iOS touch-target minimum */
+                    width: 100%;
+                    justify-content: center;
+                }}
+                .card div[style*="display:flex;gap:10px"] {{
+                    flex-direction: column;
+                }}
+
+                /* Quick links — touchable rows */
+                .card .row a {{
+                    width: auto;
+                    min-height: auto;
+                }}
+
+                /* Visual provider bar — slimmer */
+                .bar {{ height: 6px; }}
+
+                /* Bottom footer */
+                body > div > div:last-child {{ font-size: 11px; padding: 0 16px; }}
+            }}
+
+            /* Very small phones (iPhone SE etc.) */
+            @media (max-width: 380px) {{
+                .top-bar h1 {{ font-size: 15px; }}
                 .card {{ padding: 14px; }}
-                .card .big {{ font-size: 24px; }}
-                .top-bar h1 {{ font-size: 18px; }}
-                .nav-link {{ padding: 6px 12px; font-size: 12px; }}
+                .card .big {{ font-size: 22px; }}
             }}
             .settings-grid {{
                 display: grid;
