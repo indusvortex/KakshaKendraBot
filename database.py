@@ -14,7 +14,7 @@ if str(_db_dir) and str(_db_dir) != ".":
 
 
 def init_db():
-    """Initializes the SQLite database with the messages and chats tables."""
+    """Initializes the SQLite database with the messages, chats, and push_subs tables."""
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS messages (
@@ -32,7 +32,44 @@ def init_db():
                 last_read_at DATETIME
             )
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS push_subs (
+                endpoint   TEXT PRIMARY KEY,
+                p256dh     TEXT NOT NULL,
+                auth       TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         conn.commit()
+
+
+def add_push_subscription(endpoint: str, p256dh: str, auth: str):
+    """Saves (or replaces) a browser's push subscription."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            '''
+            INSERT INTO push_subs (endpoint, p256dh, auth)
+            VALUES (?, ?, ?)
+            ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth
+            ''',
+            (endpoint, p256dh, auth),
+        )
+        conn.commit()
+
+
+def remove_push_subscription(endpoint: str):
+    """Deletes a subscription (e.g. browser unsubscribed or 410 Gone)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('DELETE FROM push_subs WHERE endpoint = ?', (endpoint,))
+        conn.commit()
+
+
+def get_all_push_subscriptions() -> List[Dict]:
+    """Returns every saved push subscription for fanout."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute('SELECT endpoint, p256dh, auth FROM push_subs').fetchall()
+    return [dict(r) for r in rows]
 
 
 def upsert_contact(sender_id: str, display_name: str | None):

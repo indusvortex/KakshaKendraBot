@@ -1,11 +1,14 @@
 import os
 import csv
 import io
+import json
+import base64
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 
@@ -25,6 +28,107 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # Server start timestamp — used for uptime calculation in admin settings page
 SERVER_STARTED_AT = datetime.now(timezone.utc)
+
+
+# ============================================================
+# Web Push (VAPID) — for background notifications via service worker
+# ============================================================
+VAPID_KEYS_FILE = Path(database.DB_PATH).parent / "vapid_keys.json"
+
+
+def _get_or_create_vapid_keys() -> tuple[str, str]:
+    """
+    Returns (public_key_b64url, private_key_pem).
+    Order of preference:
+      1) VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY env vars
+      2) Cached keys on disk (persistent volume)
+      3) Generate a new pair and persist to disk
+    """
+    pub_env = os.getenv("VAPID_PUBLIC_KEY")
+    priv_env = os.getenv("VAPID_PRIVATE_KEY")
+    if pub_env and priv_env:
+        return pub_env.strip(), priv_env.strip().replace("\\n", "\n")
+
+    if VAPID_KEYS_FILE.exists():
+        try:
+            data = json.loads(VAPID_KEYS_FILE.read_text())
+            return data["public"], data["private"]
+        except Exception:
+            pass
+
+    # Generate fresh ECDSA P-256 key pair
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+
+    priv_key = ec.generate_private_key(ec.SECP256R1())
+    private_pem = priv_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
+    public_numbers = priv_key.public_key().public_numbers()
+    raw_public = b"\x04" + public_numbers.x.to_bytes(32, "big") + public_numbers.y.to_bytes(32, "big")
+    public_b64 = base64.urlsafe_b64encode(raw_public).decode().rstrip("=")
+
+    try:
+        VAPID_KEYS_FILE.write_text(json.dumps({"public": public_b64, "private": private_pem}))
+        print(f"[VAPID] Generated new keys, saved to {VAPID_KEYS_FILE}")
+    except Exception as e:
+        print(f"[VAPID] Could not persist keys to disk: {e}")
+    return public_b64, private_pem
+
+
+VAPID_PUBLIC, VAPID_PRIVATE = _get_or_create_vapid_keys()
+VAPID_CLAIMS_SUB = os.getenv("VAPID_SUBJECT", "mailto:admin@kakshakendra.com")
+
+
+def send_web_push(title: str, body: str, url: str = "/admin", tag: str = "kk-default"):
+    """Sends a Web Push to all subscribed admin browsers."""
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        print("[Push] pywebpush not installed; skipping web push.")
+        return
+
+    payload = json.dumps({
+        "title": title,
+        "body": body,
+        "url": url,
+        "tag": tag,
+        "icon": "/favicon.ico",
+    })
+
+    subs = database.get_all_push_subscriptions()
+    if not subs:
+        return
+
+    sent, failed = 0, 0
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": sub["endpoint"],
+                    "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+                },
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE,
+                vapid_claims={"sub": VAPID_CLAIMS_SUB},
+            )
+            sent += 1
+        except WebPushException as e:
+            failed += 1
+            # 410 = subscription expired, remove it
+            if e.response is not None and e.response.status_code in (404, 410):
+                database.remove_push_subscription(sub["endpoint"])
+                print(f"[Push] Removed expired subscription")
+            else:
+                print(f"[Push] Failed: {e}")
+        except Exception as e:
+            failed += 1
+            print(f"[Push] Unexpected error: {e}")
+
+    print(f"[Push] Sent: {sent}, Failed: {failed}")
 
 
 def to_ist(utc_str: str | None, fmt: str = "%d %b %Y, %I:%M %p") -> str:
@@ -214,6 +318,22 @@ async def handle_whatsapp_message(request: Request):
                             if not history:
                                 contact_name = contacts_by_wa_id.get(sender_id)
                                 _notify_admin_of_new_student(sender_id, contact_name, message_text)
+                                # Web push to all subscribed admin browsers
+                                send_web_push(
+                                    title="🔔 New Student Lead!",
+                                    body=f"{contact_name or '+' + sender_id}: {message_text[:80]}",
+                                    url=f"/admin?chat={sender_id}",
+                                    tag=f"new-{sender_id}",
+                                )
+                            else:
+                                # Existing student replying — send a softer push
+                                contact_name = contacts_by_wa_id.get(sender_id)
+                                send_web_push(
+                                    title="💬 " + (contact_name or "+" + sender_id),
+                                    body=message_text[:120],
+                                    url=f"/admin?chat={sender_id}",
+                                    tag=f"chat-{sender_id}",
+                                )
 
                             # 2. Save current user message to DB
                             database.save_message(sender_id, "user", message_text)
@@ -1117,6 +1237,12 @@ def admin_dashboard(
         <title>{title}</title>
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta name="theme-color" content="#5288c1"/>
+        <link rel="manifest" href="/manifest.json"/>
+        <meta name="mobile-web-app-capable" content="yes"/>
+        <meta name="apple-mobile-web-app-capable" content="yes"/>
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+        <meta name="apple-mobile-web-app-title" content="KK Bot"/>
         <meta http-equiv="refresh" content="60">
         <style>{_ADMIN_CSS}</style>
     </head>
@@ -1194,7 +1320,59 @@ def admin_dashboard(
             }}
 
             // ============================================================
-            // PUSH NOTIFICATIONS — alerts admin when a new student messages
+            // WEB PUSH (background, even when tab closed) — service worker
+            // ============================================================
+            async function registerPushSW() {{
+                if (!('serviceWorker' in navigator) || !('PushManager' in window)) {{
+                    console.warn('Push not supported in this browser');
+                    return;
+                }}
+                try {{
+                    const reg = await navigator.serviceWorker.register('/sw.js', {{ scope: '/' }});
+                    console.log('SW registered');
+                    return reg;
+                }} catch (e) {{
+                    console.error('SW registration failed:', e);
+                }}
+            }}
+
+            function urlB64ToUint8Array(b64) {{
+                const padding = '='.repeat((4 - b64.length % 4) % 4);
+                const s = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+                const raw = atob(s);
+                return Uint8Array.from(raw, c => c.charCodeAt(0));
+            }}
+
+            window.subscribeToPush = async function() {{
+                const reg = await registerPushSW();
+                if (!reg) return alert('Browser does not support push notifications');
+                const perm = await Notification.requestPermission();
+                if (perm !== 'granted') return alert('Permission denied — enable notifications in browser settings');
+
+                const keyRes = await fetch('/admin/push/vapid-key');
+                const {{ publicKey }} = await keyRes.json();
+
+                let sub = await reg.pushManager.getSubscription();
+                if (!sub) {{
+                    sub = await reg.pushManager.subscribe({{
+                        userVisibleOnly: true,
+                        applicationServerKey: urlB64ToUint8Array(publicKey),
+                    }});
+                }}
+
+                await fetch('/admin/push/subscribe', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify(sub.toJSON()),
+                }});
+                alert('✅ Notifications enabled! You will be alerted even when this tab is closed.');
+            }};
+
+            // Auto-register service worker silently on every page load
+            registerPushSW();
+
+            // ============================================================
+            // FOREGROUND POLLING (for when tab IS open)
             // ============================================================
             const SOUND_DATA_URI = "data:audio/wav;base64,UklGRiQEAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAEAAD//w==" +
                 "AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA";
@@ -1638,6 +1816,26 @@ def admin_settings(user: str = Depends(verify_admin)):
                     </div>
                 </div>
 
+                <!-- ================= Push Notifications ================= -->
+                <div class="card" style="grid-column: span 2">
+                    <h3>🔔 Push Notifications (Background)</h3>
+                    <p style="font-size:13px;color:#95a3b1;margin:0 0 12px">
+                        Get instant alerts when new students message — even when the dashboard is closed.
+                        Works on PC and mobile (install as PWA for best experience).
+                    </p>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap">
+                        <button onclick="subscribeToPush()" style="background:linear-gradient(135deg,#5288c1,#3a6da4);color:#fff;border:none;padding:10px 18px;border-radius:22px;cursor:pointer;font-weight:600;font-size:13px;box-shadow:0 4px 12px rgba(82,136,193,0.4)">
+                            🔔 Enable Notifications
+                        </button>
+                        <button onclick="testPush()" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);padding:10px 18px;border-radius:22px;cursor:pointer;font-weight:600;font-size:13px">
+                            🧪 Send Test Push
+                        </button>
+                    </div>
+                    <div style="margin-top:14px;font-size:12px;color:#7d8e9c">
+                        💡 <strong>For background alerts on phone:</strong> Browser menu → "Install app" or "Add to Home Screen"
+                    </div>
+                </div>
+
                 <!-- ================= Export Data ================= -->
                 <div class="card">
                     <h3>📥 Export Data</h3>
@@ -1682,6 +1880,55 @@ def admin_settings(user: str = Depends(verify_admin)):
                 Auto-refreshing every 30s · Stats reset on server restart (last restart: {started_at_ist} IST)
             </div>
         </div>
+
+        <script>
+            // Service worker registration for push
+            async function registerSW() {{
+                if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+                try {{ return await navigator.serviceWorker.register('/sw.js', {{ scope: '/' }}); }}
+                catch (e) {{ console.error(e); return null; }}
+            }}
+            registerSW();
+
+            function urlB64ToUint8Array(b64) {{
+                const padding = '='.repeat((4 - b64.length % 4) % 4);
+                const s = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+                const raw = atob(s);
+                return Uint8Array.from(raw, c => c.charCodeAt(0));
+            }}
+
+            window.subscribeToPush = async function() {{
+                const reg = await registerSW();
+                if (!reg) return alert('Browser does not support push notifications');
+                const perm = await Notification.requestPermission();
+                if (perm !== 'granted') return alert('Permission denied. Enable in browser settings.');
+
+                const keyRes = await fetch('/admin/push/vapid-key');
+                const {{ publicKey }} = await keyRes.json();
+
+                let sub = await reg.pushManager.getSubscription();
+                if (!sub) {{
+                    sub = await reg.pushManager.subscribe({{
+                        userVisibleOnly: true,
+                        applicationServerKey: urlB64ToUint8Array(publicKey),
+                    }});
+                }}
+
+                const res = await fetch('/admin/push/subscribe', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify(sub.toJSON()),
+                }});
+                if (res.ok) alert('✅ Notifications enabled! You will be alerted even when this tab is closed.');
+                else alert('❌ Failed to subscribe. Check console.');
+            }};
+
+            window.testPush = async function() {{
+                const res = await fetch('/admin/push/test', {{ method: 'POST' }});
+                if (res.ok) alert('✅ Test push sent — check for the notification!');
+                else alert('❌ Test failed. Check Railway logs.');
+            }};
+        </script>
     </body>
     </html>
     """
@@ -1816,6 +2063,118 @@ def admin_export_xlsx(user: str = Depends(verify_admin)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ============================================================
+# Web Push Endpoints — service worker, manifest, subscribe API
+# ============================================================
+@app.get("/sw.js")
+def service_worker():
+    """Returns the service worker JS that handles push events."""
+    js = """
+self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+
+self.addEventListener('push', event => {
+    let data = { title: 'Kaksha Kendra Bot', body: 'New notification' };
+    try { if (event.data) data = event.data.json(); } catch (e) {}
+    event.waitUntil(
+        self.registration.showNotification(data.title, {
+            body: data.body || '',
+            icon: data.icon || '/favicon.ico',
+            badge: data.icon || '/favicon.ico',
+            data: { url: data.url || '/admin' },
+            tag: data.tag || 'kk-notification',
+            renotify: true,
+            requireInteraction: false,
+            vibrate: [200, 100, 200]
+        })
+    );
+});
+
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    const targetUrl = (event.notification.data && event.notification.data.url) || '/admin';
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+            for (const client of list) {
+                if (client.url.includes('/admin') && 'focus' in client) {
+                    client.navigate(targetUrl);
+                    return client.focus();
+                }
+            }
+            if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+        })
+    );
+});
+"""
+    return Response(content=js, media_type="application/javascript")
+
+
+@app.get("/manifest.json")
+def manifest():
+    """PWA manifest so admins can 'Install app' to home screen."""
+    return JSONResponse({
+        "name": "Kaksha Kendra Bot",
+        "short_name": "KK Bot",
+        "description": "Admin dashboard for Kaksha Kendra WhatsApp bot",
+        "start_url": "/admin",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#0e1621",
+        "theme_color": "#5288c1",
+        "orientation": "portrait",
+        "icons": [
+            {
+                "src": "/favicon.ico",
+                "sizes": "any",
+                "type": "image/x-icon",
+                "purpose": "any",
+            },
+        ],
+    })
+
+
+@app.get("/admin/push/vapid-key")
+def push_vapid_key(user: str = Depends(verify_admin)):
+    """Returns the public VAPID key — browser uses it to subscribe."""
+    return {"publicKey": VAPID_PUBLIC}
+
+
+@app.post("/admin/push/subscribe")
+async def push_subscribe(request: Request, user: str = Depends(verify_admin)):
+    """Saves a browser push subscription so we can send notifications to it."""
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    keys = body.get("keys", {}) or {}
+    p256dh = keys.get("p256dh", "")
+    auth = keys.get("auth", "")
+    if not (endpoint and p256dh and auth):
+        raise HTTPException(status_code=400, detail="Missing subscription fields")
+    database.add_push_subscription(endpoint, p256dh, auth)
+    return {"status": "subscribed"}
+
+
+@app.post("/admin/push/unsubscribe")
+async def push_unsubscribe(request: Request, user: str = Depends(verify_admin)):
+    """Removes a browser push subscription."""
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    if endpoint:
+        database.remove_push_subscription(endpoint)
+    return {"status": "unsubscribed"}
+
+
+@app.post("/admin/push/test")
+def push_test(user: str = Depends(verify_admin)):
+    """Send a test push to verify everything works."""
+    send_web_push(
+        title="🎓 Test Notification",
+        body="If you see this, push notifications work!",
+        url="/admin",
+        tag="kk-test",
+    )
+    return {"status": "sent"}
 
 
 @app.get("/call/{number}", response_class=HTMLResponse)
