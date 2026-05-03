@@ -14,10 +14,15 @@ from utils import (
     send_whatsapp_template,
     upload_media_to_whatsapp,
     send_whatsapp_media,
+    ai_stats,
+    _get_groq_clients,
 )
 
 # India Standard Time = UTC+5:30
 IST = timezone(timedelta(hours=5, minutes=30))
+
+# Server start timestamp — used for uptime calculation in admin settings page
+SERVER_STARTED_AT = datetime.now(timezone.utc)
 
 
 def to_ist(utc_str: str | None, fmt: str = "%d %b %Y, %I:%M %p") -> str:
@@ -1117,8 +1122,11 @@ def admin_dashboard(
         <div class="app">
             <aside class="sidebar">
                 <div class="sidebar-header">
-                    <div class="sidebar-title">🎓 Kaksha Kendra Bot {unread_html}</div>
-                    <div class="sidebar-meta">{len(conversations)} chats · auto-refresh 60s</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                        <div class="sidebar-title">🎓 Kaksha Kendra Bot {unread_html}</div>
+                        <a href="/admin/settings" title="Bot Health & Settings" style="color:#7d8e9c;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s" onmouseover="this.style.background='rgba(82,136,193,0.18)';this.style.color='#5288c1'" onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.color='#7d8e9c'">⚙️</a>
+                    </div>
+                    <div class="sidebar-meta" style="margin-top:6px">{len(conversations)} chats · auto-refresh 60s</div>
                 </div>
                 <div class="search-box">
                     <input type="text" id="search" placeholder="🔍 Search students..." oninput="filterChats(this.value)" />
@@ -1282,6 +1290,275 @@ def admin_delete_chat(sender_id: str, user: str = Depends(verify_admin)):
     deleted = database.delete_chat(sender_id)
     print(f"[Admin] Deleted chat with +{sender_id} ({deleted} messages)")
     return RedirectResponse(url=f"/admin?sent=1", status_code=303)
+
+
+def _format_duration(seconds: float) -> str:
+    """Formats seconds as a human-friendly uptime string."""
+    seconds = int(seconds)
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    parts = []
+    if days: parts.append(f"{days}d")
+    if hours: parts.append(f"{hours}h")
+    if minutes: parts.append(f"{minutes}m")
+    if not parts: parts.append(f"{secs}s")
+    return " ".join(parts)
+
+
+def _format_bytes(n: int) -> str:
+    if n < 1024: return f"{n} B"
+    if n < 1024 ** 2: return f"{n / 1024:.1f} KB"
+    if n < 1024 ** 3: return f"{n / 1024 ** 2:.2f} MB"
+    return f"{n / 1024 ** 3:.2f} GB"
+
+
+@app.get("/admin/settings", response_class=HTMLResponse)
+def admin_settings(user: str = Depends(verify_admin)):
+    """Bot health, AI provider stats, and database statistics."""
+    db_stats = database.get_stats()
+
+    # Uptime
+    uptime_seconds = (datetime.now(timezone.utc) - SERVER_STARTED_AT).total_seconds()
+    uptime_str = _format_duration(uptime_seconds)
+    started_at_ist = to_ist(
+        SERVER_STARTED_AT.strftime("%Y-%m-%d %H:%M:%S"),
+        "%d %b %Y, %I:%M %p",
+    )
+
+    # AI provider key counts
+    groq_keys = len(_get_groq_clients())
+    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+    has_cerebras = bool(os.getenv("CEREBRAS_API_KEY"))
+
+    # Provider health (online if last success within 1 hour)
+    def provider_status(last_iso: str | None) -> tuple[str, str]:
+        if not last_iso:
+            return ("⚪ Idle", "#7d8e9c")
+        try:
+            last = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))
+            mins_ago = (datetime.now(timezone.utc) - last).total_seconds() / 60
+            if mins_ago < 60:
+                return (f"🟢 Healthy ({int(mins_ago)}m ago)", "#10b981")
+            if mins_ago < 1440:
+                return (f"🟡 Recent ({int(mins_ago / 60)}h ago)", "#f59e0b")
+            return (f"🔴 Stale ({int(mins_ago / 1440)}d ago)", "#ef4444")
+        except Exception:
+            return ("⚪ Unknown", "#7d8e9c")
+
+    groq_status, groq_color = provider_status(ai_stats.get("last_groq_success_at"))
+    gemini_status, gemini_color = provider_status(ai_stats.get("last_gemini_success_at"))
+    cerebras_status, cerebras_color = provider_status(ai_stats.get("last_cerebras_success_at"))
+
+    # Token cost estimate (very rough): Groq paid ~$0.59/M input, $0.79/M output
+    # Free tier hits limit at 100k/day. Use 0 cost while within free tier estimate.
+    tokens_used = ai_stats.get("tokens_used_estimate", 0)
+    cost_usd = tokens_used / 1_000_000 * 0.7  # rough average
+    cost_inr = cost_usd * 83  # approx exchange rate
+
+    # AI usage breakdown for the bar chart
+    total_ai = (
+        ai_stats["groq_success"]
+        + ai_stats["gemini_success"]
+        + ai_stats["cerebras_success"]
+    ) or 1
+    groq_pct = (ai_stats["groq_success"] / total_ai) * 100
+    gemini_pct = (ai_stats["gemini_success"] / total_ai) * 100
+    cerebras_pct = (ai_stats["cerebras_success"] / total_ai) * 100
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Settings · Kaksha Kendra Bot</title>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta http-equiv="refresh" content="30">
+        <style>{_ADMIN_CSS}
+            .settings-wrap {{ padding: 20px; overflow-y: auto; max-width: 1100px; margin: 0 auto; width: 100%; }}
+            .settings-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 14px;
+                margin-top: 18px;
+            }}
+            .card {{
+                background: rgba(23, 33, 43, 0.55);
+                backdrop-filter: blur(40px) saturate(180%);
+                -webkit-backdrop-filter: blur(40px) saturate(180%);
+                border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 14px;
+                padding: 18px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+                transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            }}
+            .card:hover {{ transform: translateY(-3px); }}
+            .card h3 {{
+                margin: 0 0 12px;
+                font-size: 13px;
+                color: #95a3b1;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }}
+            .card .big {{ font-size: 28px; font-weight: 700; color: #fff; line-height: 1.1; }}
+            .card .small {{ font-size: 13px; color: #95a3b1; margin-top: 4px; }}
+            .row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }}
+            .row:last-child {{ border-bottom: none; }}
+            .row .label {{ color: #95a3b1; font-size: 13px; }}
+            .row .val {{ color: #fff; font-weight: 600; font-size: 13px; }}
+            .bar {{
+                height: 8px;
+                background: rgba(255,255,255,0.05);
+                border-radius: 4px;
+                overflow: hidden;
+                display: flex;
+                margin-top: 8px;
+            }}
+            .bar > div {{ height: 100%; transition: width 0.5s; }}
+            .badge {{ display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; }}
+            .top-bar {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 8px; }}
+            .top-bar h1 {{ margin: 0; font-size: 22px; }}
+            .nav-link {{
+                color: #5288c1;
+                background: rgba(82,136,193,0.1);
+                border: 1px solid rgba(82,136,193,0.2);
+                padding: 8px 14px;
+                border-radius: 20px;
+                text-decoration: none;
+                font-size: 13px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="settings-wrap">
+            <div class="top-bar">
+                <h1>⚙️ Bot Health & Settings</h1>
+                <a href="/admin" class="nav-link">← Back to dashboard</a>
+            </div>
+
+            <div class="settings-grid">
+
+                <!-- ================= UPTIME ================= -->
+                <div class="card">
+                    <h3>🟢 Server Uptime</h3>
+                    <div class="big">{uptime_str}</div>
+                    <div class="small">Started: {started_at_ist} IST</div>
+                </div>
+
+                <!-- ================= AI Calls ================= -->
+                <div class="card">
+                    <h3>🤖 AI Calls (Since Restart)</h3>
+                    <div class="big">{ai_stats["total_calls"]}</div>
+                    <div class="small">{ai_stats["all_failed"]} fully failed · {total_ai} succeeded</div>
+                    <div class="bar">
+                        <div style="width:{groq_pct}%;background:#5288c1" title="Groq"></div>
+                        <div style="width:{gemini_pct}%;background:#10b981" title="Gemini"></div>
+                        <div style="width:{cerebras_pct}%;background:#f59e0b" title="Cerebras"></div>
+                    </div>
+                    <div class="small" style="display:flex;gap:12px;margin-top:8px">
+                        <span><span style="color:#5288c1">●</span> Groq {ai_stats["groq_success"]}</span>
+                        <span><span style="color:#10b981">●</span> Gemini {ai_stats["gemini_success"]}</span>
+                        <span><span style="color:#f59e0b">●</span> Cerebras {ai_stats["cerebras_success"]}</span>
+                    </div>
+                </div>
+
+                <!-- ================= Token Usage ================= -->
+                <div class="card">
+                    <h3>💰 Token Usage Estimate</h3>
+                    <div class="big">{tokens_used:,}</div>
+                    <div class="small">Approximate cost: ${cost_usd:.4f} (~₹{cost_inr:.2f})</div>
+                    <div class="small" style="margin-top:6px;font-size:11px">Free tiers cover most usage. Cost shown is paid-tier estimate.</div>
+                </div>
+
+                <!-- ================= Provider Status ================= -->
+                <div class="card" style="grid-column: span 2">
+                    <h3>📡 AI Provider Status</h3>
+                    <div class="row">
+                        <span class="label">Groq <span class="badge" style="background:rgba(82,136,193,0.15);color:#5288c1">{groq_keys} key{"s" if groq_keys != 1 else ""}</span></span>
+                        <span class="val" style="color:{groq_color}">{groq_status}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Gemini <span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981">{"On" if has_gemini else "Off"}</span></span>
+                        <span class="val" style="color:{gemini_color}">{gemini_status}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Cerebras <span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">{"On" if has_cerebras else "Off"}</span></span>
+                        <span class="val" style="color:{cerebras_color}">{cerebras_status}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Failures (Groq · Gemini · Cerebras)</span>
+                        <span class="val">{ai_stats["groq_fail"]} · {ai_stats["gemini_fail"]} · {ai_stats["cerebras_fail"]}</span>
+                    </div>
+                </div>
+
+                <!-- ================= Students Today ================= -->
+                <div class="card">
+                    <h3>📥 Students (Last 24h)</h3>
+                    <div class="big">{db_stats["new_students_today"]}</div>
+                    <div class="small">{db_stats["messages_today"]} total messages today</div>
+                </div>
+
+                <!-- ================= All-time stats ================= -->
+                <div class="card" style="grid-column: span 2">
+                    <h3>📊 Conversation Stats</h3>
+                    <div class="row">
+                        <span class="label">Total students (all time)</span>
+                        <span class="val">{db_stats["total_students"]}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Active in last 7 days</span>
+                        <span class="val">{db_stats["active_students_week"]}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Total messages stored</span>
+                        <span class="val">{db_stats["total_messages"]:,}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Student → Bot messages</span>
+                        <span class="val">{db_stats["total_user_messages"]:,}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Bot → Student replies</span>
+                        <span class="val">{db_stats["total_bot_replies"]:,}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Messages this week</span>
+                        <span class="val">{db_stats["messages_week"]:,}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Database size</span>
+                        <span class="val">{_format_bytes(db_stats["db_size_bytes"])}</span>
+                    </div>
+                </div>
+
+                <!-- ================= Quick Links ================= -->
+                <div class="card">
+                    <h3>🔗 Quick Links</h3>
+                    <div class="row">
+                        <a href="https://railway.com" target="_blank" class="label" style="color:#5288c1">Railway Dashboard ↗</a>
+                    </div>
+                    <div class="row">
+                        <a href="https://console.groq.com/settings/usage" target="_blank" class="label" style="color:#5288c1">Groq Usage ↗</a>
+                    </div>
+                    <div class="row">
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="label" style="color:#5288c1">Gemini API Keys ↗</a>
+                    </div>
+                    <div class="row">
+                        <a href="https://cloud.cerebras.ai/platform/inference/limits" target="_blank" class="label" style="color:#5288c1">Cerebras Limits ↗</a>
+                    </div>
+                </div>
+
+            </div>
+
+            <div style="margin-top: 16px; text-align: center; color: #7d8e9c; font-size: 12px">
+                Auto-refreshing every 30s · Stats reset on server restart (last restart: {started_at_ist} IST)
+            </div>
+        </div>
+    </body>
+    </html>
+    """
 
 
 @app.get("/call/{number}", response_class=HTMLResponse)

@@ -163,3 +163,56 @@ def delete_chat(sender_id: str) -> int:
         conn.execute('DELETE FROM chats WHERE sender_id = ?', (sender_id,))
         conn.commit()
     return deleted
+
+
+def get_stats() -> Dict:
+    """
+    Returns aggregate statistics about messages and students:
+    counts for today, last 7 days, all-time, plus DB size.
+    """
+    stats = {}
+    with sqlite3.connect(DB_PATH) as conn:
+        # All-time totals
+        stats["total_messages"] = conn.execute(
+            "SELECT COUNT(*) FROM messages"
+        ).fetchone()[0]
+        stats["total_students"] = conn.execute(
+            "SELECT COUNT(DISTINCT sender_id) FROM messages"
+        ).fetchone()[0]
+        stats["total_user_messages"] = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE role = 'user'"
+        ).fetchone()[0]
+        stats["total_bot_replies"] = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE role = 'assistant'"
+        ).fetchone()[0]
+
+        # Last 24 hours
+        stats["messages_today"] = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE timestamp >= datetime('now', '-1 day')"
+        ).fetchone()[0]
+        stats["new_students_today"] = conn.execute(
+            """
+            SELECT COUNT(DISTINCT sender_id) FROM messages
+            WHERE sender_id NOT IN (
+                SELECT DISTINCT sender_id FROM messages
+                WHERE timestamp < datetime('now', '-1 day')
+            )
+            AND timestamp >= datetime('now', '-1 day')
+            """
+        ).fetchone()[0]
+
+        # Last 7 days
+        stats["messages_week"] = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE timestamp >= datetime('now', '-7 days')"
+        ).fetchone()[0]
+        stats["active_students_week"] = conn.execute(
+            "SELECT COUNT(DISTINCT sender_id) FROM messages WHERE timestamp >= datetime('now', '-7 days')"
+        ).fetchone()[0]
+
+    # Database file size on disk
+    try:
+        stats["db_size_bytes"] = os.path.getsize(DB_PATH)
+    except OSError:
+        stats["db_size_bytes"] = 0
+
+    return stats

@@ -1,10 +1,41 @@
 import os
 import requests
 import re
+from datetime import datetime, timezone
 from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+# ============================================================
+# AI Provider Stats — tracks which fallback was used + counts
+# Reset on every server restart (lives in process memory)
+# ============================================================
+ai_stats = {
+    "started_at": datetime.now(timezone.utc).isoformat(),
+    "total_calls": 0,
+    "groq_success": 0,
+    "groq_fail": 0,
+    "gemini_success": 0,
+    "gemini_fail": 0,
+    "cerebras_success": 0,
+    "cerebras_fail": 0,
+    "all_failed": 0,
+    "last_groq_success_at": None,
+    "last_gemini_success_at": None,
+    "last_cerebras_success_at": None,
+    # Approx token usage (input + output)
+    "tokens_used_estimate": 0,
+}
+
+
+def _bump_stat(key: str, by: int = 1):
+    if key in ai_stats:
+        if isinstance(ai_stats[key], (int, float)):
+            ai_stats[key] += by
+        else:
+            ai_stats[key] = datetime.now(timezone.utc).isoformat()
 
 # Groq clients — supports multiple API keys for rate-limit rotation.
 # Configure as: GROQ_API_KEY (primary), GROQ_API_KEY_2, GROQ_API_KEY_3, ... up to _10
@@ -48,6 +79,11 @@ def _generate_with_groq(messages: list) -> str | None:
             )
             if i > 0:
                 print(f"[Groq] Used backup key #{i + 1}")
+            _bump_stat("groq_success")
+            ai_stats["last_groq_success_at"] = datetime.now(timezone.utc).isoformat()
+            usage = getattr(response, "usage", None)
+            if usage:
+                ai_stats["tokens_used_estimate"] += getattr(usage, "total_tokens", 0)
             return response.choices[0].message.content
         except Exception as e:
             err_str = str(e).lower()
@@ -58,6 +94,7 @@ def _generate_with_groq(messages: list) -> str | None:
             continue
 
     print("[Groq] All keys exhausted.")
+    _bump_stat("groq_fail")
     return None
 
 
@@ -108,9 +145,15 @@ def _generate_with_gemini(messages: list) -> str | None:
             contents=contents,
         )
         print("[Gemini fallback] Response generated successfully.")
+        _bump_stat("gemini_success")
+        ai_stats["last_gemini_success_at"] = datetime.now(timezone.utc).isoformat()
+        usage = getattr(response, "usage_metadata", None)
+        if usage:
+            ai_stats["tokens_used_estimate"] += getattr(usage, "total_token_count", 0)
         return response.text
     except Exception as e:
         print(f"[Gemini fallback] Failed: {e}")
+        _bump_stat("gemini_fail")
         return None
 
 
@@ -148,9 +191,15 @@ def _generate_with_cerebras(messages: list) -> str | None:
             max_tokens=500,
         )
         print("[Cerebras fallback] Response generated successfully.")
+        _bump_stat("cerebras_success")
+        ai_stats["last_cerebras_success_at"] = datetime.now(timezone.utc).isoformat()
+        usage = getattr(response, "usage", None)
+        if usage:
+            ai_stats["tokens_used_estimate"] += getattr(usage, "total_tokens", 0)
         return response.choices[0].message.content
     except Exception as e:
         print(f"[Cerebras fallback] Failed: {e}")
+        _bump_stat("cerebras_fail")
         return None
 
 
@@ -405,6 +454,7 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
     chat_history: past messages (role/content dicts), NOT including current_message.
     current_message: the new user message to respond to.
     """
+    _bump_stat("total_calls")
     messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
     for msg in chat_history:
         messages.append({"role": msg["role"], "content": msg["content"]})
@@ -428,6 +478,7 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
         return cerebras_response
 
     # ---------- All providers failed ----------
+    _bump_stat("all_failed")
     return "I'm sorry, our AI is extremely busy right now helping other students! Please try again in a moment."
 
 
