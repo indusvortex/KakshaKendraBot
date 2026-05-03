@@ -1190,6 +1190,109 @@ def admin_dashboard(
                     }}
                 }});
             }}
+
+            // ============================================================
+            // PUSH NOTIFICATIONS — alerts admin when a new student messages
+            // ============================================================
+            const SOUND_DATA_URI = "data:audio/wav;base64,UklGRiQEAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAEAAD//w==" +
+                "AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA";
+            const originalTitle = document.title;
+            let unseenCount = 0;
+
+            // Step 1 — Ask permission on first interaction
+            function ensurePermission() {{
+                if ('Notification' in window && Notification.permission === 'default') {{
+                    Notification.requestPermission();
+                }}
+            }}
+            document.addEventListener('click', ensurePermission, {{ once: true }});
+
+            // Step 2 — Poll for new students and unseen messages every 15 seconds
+            async function pollNewChats() {{
+                try {{
+                    const res = await fetch('/admin/api/conversations', {{ credentials: 'include' }});
+                    if (!res.ok) return;
+                    const data = await res.json();
+
+                    const lastSeen = JSON.parse(localStorage.getItem('lastSeenChats') || '{{}}');
+                    let foundNew = 0;
+
+                    for (const chat of data.conversations || []) {{
+                        const lastActive = chat.last_active;
+                        const seenAt = lastSeen[chat.sender_id];
+                        if (chat.unread && (!seenAt || seenAt < lastActive)) {{
+                            // New unread message we haven't notified about yet
+                            const isNewLead = !seenAt;
+                            const title = isNewLead
+                                ? '🔔 NEW STUDENT messaged Kaksha Kendra Bot'
+                                : '💬 New message from ' + (chat.display_name || '+' + chat.sender_id);
+                            const body = (chat.last_message || '').slice(0, 100);
+                            showNotification(title, body, chat.sender_id);
+                            foundNew++;
+                        }}
+                        lastSeen[chat.sender_id] = lastActive;
+                    }}
+                    localStorage.setItem('lastSeenChats', JSON.stringify(lastSeen));
+
+                    if (foundNew > 0) {{
+                        unseenCount += foundNew;
+                        flashTitle();
+                    }}
+                }} catch (e) {{
+                    console.warn('Poll failed:', e);
+                }}
+            }}
+
+            function showNotification(title, body, senderId) {{
+                if ('Notification' in window && Notification.permission === 'granted') {{
+                    const n = new Notification(title, {{
+                        body: body,
+                        icon: '/favicon.ico',
+                        tag: 'kk-' + senderId,
+                        requireInteraction: false,
+                        silent: false,
+                    }});
+                    n.onclick = function() {{
+                        window.focus();
+                        window.location.href = '/admin?chat=' + senderId;
+                        n.close();
+                    }};
+                    setTimeout(() => n.close(), 8000);
+                }}
+                // Always play sound (works even without notification permission)
+                try {{
+                    const audio = new Audio(SOUND_DATA_URI);
+                    audio.volume = 0.6;
+                    audio.play().catch(() => {{}});
+                }} catch (e) {{}}
+            }}
+
+            // Flash the browser tab title when there are unseen messages
+            let titleInterval = null;
+            function flashTitle() {{
+                if (titleInterval) return;
+                let toggle = false;
+                titleInterval = setInterval(() => {{
+                    document.title = toggle
+                        ? originalTitle
+                        : '🔔 (' + unseenCount + ') New message!';
+                    toggle = !toggle;
+                }}, 1500);
+            }}
+
+            // Reset title flash when user comes back to the tab
+            window.addEventListener('focus', () => {{
+                if (titleInterval) {{
+                    clearInterval(titleInterval);
+                    titleInterval = null;
+                    document.title = originalTitle;
+                    unseenCount = 0;
+                }}
+            }});
+
+            // Start polling immediately + every 15 seconds
+            pollNewChats();
+            setInterval(pollNewChats, 15000);
         </script>
     </body>
     </html>
