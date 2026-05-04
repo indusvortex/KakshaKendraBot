@@ -27,6 +27,12 @@ ai_stats = {
     "last_cerebras_success_at": None,
     # Approx token usage (input + output)
     "tokens_used_estimate": 0,
+    # Per-key Groq stats — populated when keys are loaded.
+    # Each item: {"index", "label", "success", "rate_limited", "fail",
+    #             "last_used_at", "last_status"}
+    "groq_keys": [],
+    # Index of the key that handled the most recent successful Groq call
+    "last_groq_key_index": None,
 }
 
 
@@ -47,14 +53,34 @@ def _get_groq_clients() -> list:
     global _groq_clients_cache
     if _groq_clients_cache is None:
         keys = []
+        labels = []
+        # Primary key uses env name "GROQ_API_KEY"
         primary = os.getenv("GROQ_API_KEY")
         if primary:
             keys.append(primary)
+            labels.append("GROQ_API_KEY")
+        # Additional keys: GROQ_API_KEY_2, _3, ... up to _10
         for i in range(2, 11):
             extra = os.getenv(f"GROQ_API_KEY_{i}")
             if extra:
                 keys.append(extra)
+                labels.append(f"GROQ_API_KEY_{i}")
         _groq_clients_cache = [Groq(api_key=k) for k in keys]
+
+        # Initialize per-key stats so the dashboard can render even before any call
+        ai_stats["groq_keys"] = [
+            {
+                "index": i + 1,
+                "label": labels[i],
+                "key_preview": (keys[i][:6] + "…" + keys[i][-4:]) if len(keys[i]) > 12 else "***",
+                "success": 0,
+                "rate_limited": 0,
+                "fail": 0,
+                "last_used_at": None,
+                "last_status": "idle",  # idle | success | rate_limited | error
+            }
+            for i in range(len(keys))
+        ]
         print(f"[Groq] Loaded {len(_groq_clients_cache)} API key(s).")
     return _groq_clients_cache
 
@@ -70,6 +96,7 @@ def _generate_with_groq(messages: list) -> str | None:
         return None
 
     for i, client in enumerate(clients):
+        now_iso = datetime.now(timezone.utc).isoformat()
         try:
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
@@ -80,7 +107,13 @@ def _generate_with_groq(messages: list) -> str | None:
             if i > 0:
                 print(f"[Groq] Used backup key #{i + 1}")
             _bump_stat("groq_success")
-            ai_stats["last_groq_success_at"] = datetime.now(timezone.utc).isoformat()
+            ai_stats["last_groq_success_at"] = now_iso
+            ai_stats["last_groq_key_index"] = i + 1
+            # Per-key stats
+            if i < len(ai_stats["groq_keys"]):
+                ai_stats["groq_keys"][i]["success"] += 1
+                ai_stats["groq_keys"][i]["last_used_at"] = now_iso
+                ai_stats["groq_keys"][i]["last_status"] = "success"
             usage = getattr(response, "usage", None)
             if usage:
                 ai_stats["tokens_used_estimate"] += getattr(usage, "total_tokens", 0)
@@ -89,8 +122,16 @@ def _generate_with_groq(messages: list) -> str | None:
             err_str = str(e).lower()
             if "rate_limit" in err_str or "429" in err_str or "quota" in err_str:
                 print(f"[Groq] Key #{i + 1} rate-limited, trying next key...")
+                if i < len(ai_stats["groq_keys"]):
+                    ai_stats["groq_keys"][i]["rate_limited"] += 1
+                    ai_stats["groq_keys"][i]["last_used_at"] = now_iso
+                    ai_stats["groq_keys"][i]["last_status"] = "rate_limited"
                 continue
             print(f"[Groq] Key #{i + 1} failed (non-rate-limit): {e}")
+            if i < len(ai_stats["groq_keys"]):
+                ai_stats["groq_keys"][i]["fail"] += 1
+                ai_stats["groq_keys"][i]["last_used_at"] = now_iso
+                ai_stats["groq_keys"][i]["last_status"] = "error"
             continue
 
     print("[Groq] All keys exhausted.")

@@ -1597,6 +1597,64 @@ def _format_bytes(n: int) -> str:
     return f"{n / 1024 ** 3:.2f} GB"
 
 
+def _render_groq_keys_card() -> str:
+    """Renders a card showing per-key Groq status: success/rate-limit/idle."""
+    keys = ai_stats.get("groq_keys", [])
+    last_idx = ai_stats.get("last_groq_key_index")
+
+    if not keys:
+        return ""  # No Groq keys loaded yet — skip the card
+
+    rows = []
+    for k in keys:
+        status = k.get("last_status", "idle")
+        success = k.get("success", 0)
+        rl = k.get("rate_limited", 0)
+        fail = k.get("fail", 0)
+        last_used = k.get("last_used_at")
+        is_active = (k["index"] == last_idx)
+
+        # Status pill colors
+        if status == "success":
+            dot, color, text = "🟢", "#10b981", "Healthy"
+        elif status == "rate_limited":
+            dot, color, text = "🟡", "#f59e0b", "Rate-limited"
+        elif status == "error":
+            dot, color, text = "🔴", "#ef4444", "Error"
+        else:
+            dot, color, text = "⚪", "#7d8e9c", "Idle"
+
+        last_used_str = to_ist(last_used.replace("T", " ").split(".")[0], "%I:%M %p") if last_used else "—"
+        active_marker = '<span style="background:rgba(82,136,193,0.18);color:#5288c1;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:6px">LAST USED</span>' if is_active else ''
+
+        rows.append(f"""
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+            <div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:13px;flex-shrink:0;border:1px solid rgba(255,255,255,0.06)">#{k['index']}</div>
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:13px;color:#fff;display:flex;align-items:center;flex-wrap:wrap">
+                    <span>{k['label']}</span>{active_marker}
+                </div>
+                <div style="font-size:11px;color:#7d8e9c;font-family:monospace">{k.get('key_preview', '***')} · last: {last_used_str}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+                <div style="color:{color};font-weight:600;font-size:13px">{dot} {text}</div>
+                <div style="font-size:11px;color:#7d8e9c">✓{success} · 🟡{rl} · ✗{fail}</div>
+            </div>
+        </div>
+        """)
+
+    return f"""
+    <div class="card" style="grid-column: span 2">
+        <h3>🔑 Groq API Keys ({len(keys)})</h3>
+        <div style="font-size:12px;color:#95a3b1;margin-bottom:8px">
+            Bot tries each key in order. When one rate-limits, the next takes over.
+            ✓ success · 🟡 rate-limited · ✗ error
+        </div>
+        {''.join(rows)}
+    </div>
+    """
+
+
 @app.get("/admin/settings", response_class=HTMLResponse)
 def admin_settings(user: str = Depends(verify_admin)):
     """Bot health, AI provider stats, and database statistics."""
@@ -1871,6 +1929,9 @@ def admin_settings(user: str = Depends(verify_admin)):
                         <span class="val">{ai_stats["groq_fail"]} · {ai_stats["gemini_fail"]} · {ai_stats["cerebras_fail"]}</span>
                     </div>
                 </div>
+
+                <!-- ================= Per-Key Groq Status ================= -->
+                {_render_groq_keys_card()}
 
                 <!-- ================= Students Today ================= -->
                 <div class="card">
