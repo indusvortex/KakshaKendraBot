@@ -258,6 +258,26 @@ async def handle_whatsapp_message(request: Request):
                         if wa_id and name:
                             contacts_by_wa_id[wa_id] = name
 
+                    # ----- Status events: delivery / read / failed for messages WE sent -----
+                    if "statuses" in value:
+                        for st in value["statuses"]:
+                            st_type = st.get("status", "?")
+                            msg_id = st.get("id", "")
+                            recipient = st.get("recipient_id", "")
+                            if st_type == "failed":
+                                errors = st.get("errors", []) or []
+                                for err in errors:
+                                    print(
+                                        f"[Status] ✗ FAILED to +{recipient} | "
+                                        f"code={err.get('code')} title={err.get('title')!r} "
+                                        f"message={err.get('message')!r} "
+                                        f"details={err.get('error_data', {}).get('details')!r} "
+                                        f"msg_id={msg_id}"
+                                    )
+                            else:
+                                # 'sent' / 'delivered' / 'read'
+                                print(f"[Status] {st_type} | +{recipient} | msg_id={msg_id}")
+
                     if "messages" in value:
                         for message in value["messages"]:
                             # Deduplicate: skip if we already processed this message

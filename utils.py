@@ -681,12 +681,13 @@ def upload_media_to_whatsapp(file_bytes: bytes, filename: str, mime_type: str) -
 def send_whatsapp_template(to_phone: str, template_name: str, language_code: str = "en") -> bool:
     """
     Sends a pre-approved WhatsApp template message.
-    Use this for approved templates that have phone-number/URL buttons,
-    which free-form messages cannot have.
+    Logs detailed Meta response (message ID and any errors) so delivery
+    problems can be diagnosed from Railway logs.
     """
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
     if not whatsapp_token or not phone_id:
+        print("[Template] ERROR: WHATSAPP_TOKEN or WHATSAPP_PHONE_NUMBER_ID not set")
         return False
 
     url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
@@ -704,15 +705,38 @@ def send_whatsapp_template(to_phone: str, template_name: str, language_code: str
         },
     }
 
+    print(f"[Template] Sending '{template_name}' (lang={language_code}) to +{to_phone}")
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=15)
-        response.raise_for_status()
-        print(f"[Template] Sent '{template_name}' to +{to_phone}")
-        return True
+        # Log response regardless of status
+        try:
+            data = response.json()
+        except Exception:
+            data = {"raw": response.text}
+
+        if response.ok:
+            msg_id = ""
+            if isinstance(data, dict):
+                msgs = data.get("messages", [])
+                if msgs:
+                    msg_id = msgs[0].get("id", "")
+            print(f"[Template] ✓ ACCEPTED by Meta. msg_id={msg_id}")
+            print(f"[Template] (Meta says 'accepted' — actual delivery shown in 'statuses' webhooks)")
+            return True
+        else:
+            # Detailed error info
+            err = data.get("error", {}) if isinstance(data, dict) else {}
+            print(f"[Template] ✗ REJECTED by Meta — HTTP {response.status_code}")
+            print(f"[Template] Error code: {err.get('code')} ({err.get('type')})")
+            print(f"[Template] Message:    {err.get('message')}")
+            print(f"[Template] Details:    {err.get('error_data', {}).get('details')}")
+            print(f"[Template] Subcode:    {err.get('error_subcode')}")
+            print(f"[Template] Trace ID:   {err.get('fbtrace_id')}")
+            return False
     except requests.exceptions.RequestException as e:
-        print(f"[Template] Failed to send '{template_name}': {e}")
+        print(f"[Template] NETWORK ERROR: {e}")
         if hasattr(e, "response") and e.response is not None:
-            print(f"API response: {e.response.text}")
+            print(f"[Template] Raw response: {e.response.text}")
         return False
 
 
