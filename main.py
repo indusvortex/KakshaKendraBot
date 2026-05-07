@@ -330,6 +330,29 @@ def _notify_admin_lead_pending(sender_id: str, name: str, class_label: str, mins
     )
     _whatsapp_broadcast(admin_numbers, notification, label="Admin-Reminder")
 
+
+def _notify_team_lead_pending(sender_id: str, name: str, class_label: str, mins_waiting: int):
+    """
+    Sends a WhatsApp 'have you called?' reminder to TEAM numbers every 5 minutes
+    until the lead is marked as called.
+    """
+    team_numbers = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
+    if not team_numbers:
+        return
+
+    notification = (
+        f"⏰ *Reminder — Have you called this lead?*\n"
+        f"\n"
+        f"👤 *Name:* {name}\n"
+        f"📱 *Number:* +{sender_id}\n"
+        f"🎓 *Class:* {class_label or 'TBD'}\n"
+        f"⏱️ *Waiting:* {mins_waiting} min\n"
+        f"\n"
+        f"📊 Open the dashboard and tap '✓ Mark Called' once done.\n"
+        f"🚨 If you don't act, admin will be notified."
+    )
+    _whatsapp_broadcast(team_numbers, notification, label="Team-Reminder")
+
 load_dotenv()
 
 # Verify Token used by Meta to verify webhook
@@ -428,8 +451,11 @@ async def reminder_loop():
                 age_since_last_remind = (now_utc - (last_remind or created)).total_seconds()
                 age_since_creation = (now_utc - created).total_seconds()
 
-                # 1. Re-push to team every 5 minutes — push + WhatsApp message to admin
+                # 1. Every 5 minutes: push + WhatsApp ping to TEAM, plus WhatsApp CC to ADMIN
                 if last_remind is None or age_since_last_remind >= REMINDER_INTERVAL_SECONDS:
+                    mins_waiting = int(age_since_creation / 60)
+
+                    # Web push to team browsers (real-time)
                     send_web_push(
                         title="📞 Reminder — call this lead!",
                         body=f"{naam} ({class_label or 'class TBD'}) — still pending",
@@ -437,9 +463,11 @@ async def reminder_loop():
                         tag=f"remind-{sender_id}",
                         role="team",
                     )
-                    # Also send a WhatsApp reminder to admin so they know team hasn't acted
-                    mins_waiting = int(age_since_creation / 60)
+                    # WhatsApp reminder to TEAM ("have you called yet?")
+                    _notify_team_lead_pending(sender_id, naam, class_label, mins_waiting)
+                    # WhatsApp CC to ADMIN ("team hasn't acted")
                     _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
+
                     database.mark_lead_reminded(sender_id)
 
                 # 2. Escalate to admin if not handled in 2 minutes
