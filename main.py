@@ -143,6 +143,57 @@ def to_ist(utc_str: str | None, fmt: str = "%d %b %Y, %I:%M %p") -> str:
         return utc_str
 
 
+_CLASS_PATTERNS = [
+    # "Class 10", "class10", "Class - 10"
+    r'class[\s\-]*(\d{1,2})',
+    # "10th class", "10 class"
+    r'(\d{1,2})(?:st|nd|rd|th)?\s*class',
+    # "10th", "9th" standalone
+    r'\b(\d{1,2})(?:st|nd|rd|th)\b',
+    # Hindi "10वीं", "9वी"
+    r'(\d{1,2})\s*(?:वीं|वी|th\s|tha)',
+    # Pre-school
+    r'(pre[\s\-]*primary|primary|nursery|ukg|lkg)',
+    # Junior / Secondary keywords
+    r'(junior|secondary|sr\.?\s*secondary|senior\s*secondary|foundation)',
+]
+
+
+def _detect_class(text: str) -> str:
+    """Extracts a class label from a student's message. Returns '' if not found."""
+    if not text:
+        return ""
+    import re as _re
+    lowered = text.lower()
+    for pat in _CLASS_PATTERNS:
+        m = _re.search(pat, lowered)
+        if m:
+            v = m.group(1)
+            if v.isdigit():
+                n = int(v)
+                if 1 <= n <= 12:
+                    return f"Class {n}"
+            else:
+                return v.title()
+    return ""
+
+
+def _detect_source(text: str) -> str:
+    """Guesses how the student found us based on their first message."""
+    if not text:
+        return "WhatsApp"
+    lowered = text.lower()
+    if any(w in lowered for w in ["ad", "advertisement", "facebook", "instagram", "fb", "insta", "saw your"]):
+        return "Meta Ad"
+    if any(w in lowered for w in ["referral", "referred", "friend", "recommend", "told"]):
+        return "Referral"
+    if any(w in lowered for w in ["website", "google", "search"]):
+        return "Website / Google"
+    if any(w in lowered for w in ["story", "reel", "post"]):
+        return "Instagram"
+    return "WhatsApp"
+
+
 def _sync_to_google_sheets(
     sender_id: str,
     name: str | None,
@@ -151,10 +202,9 @@ def _sync_to_google_sheets(
     is_new_lead: bool = False,
 ):
     """
-    Sends lead/message data to a Google Apps Script web app, which appends
-    or updates a row in the configured Google Sheet.
-    Silently skips if GOOGLE_SHEETS_WEBHOOK env var is not set.
-    Runs in the request flow but with a short timeout so it never blocks the bot.
+    Sends CRM-style data to a Google Apps Script web app.
+    Sheet columns: Naam | Class | Phone | Source | Status | Next Call | Notes
+    Apps Script preserves Source/Status/Next Call/Notes once admin sets them manually.
     """
     webhook_url = os.getenv("GOOGLE_SHEETS_WEBHOOK", "").strip()
     if not webhook_url:
@@ -162,18 +212,19 @@ def _sync_to_google_sheets(
 
     payload = {
         "phone": "+" + sender_id,
-        "name": (name or "Unknown").strip(),
-        "role": role,  # "user" or "assistant"
-        "message": message[:300],
-        "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+        "naam": (name or "Unknown").strip(),
+        "class": _detect_class(message),
+        "source": _detect_source(message) if is_new_lead else "",
+        "status": "New" if is_new_lead else "",
+        "last_message": message[:200],
+        "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M"),
         "is_new_lead": is_new_lead,
     }
 
     try:
         import requests
-        # Short timeout so a slow Sheets script doesn't slow down replies
         requests.post(webhook_url, json=payload, timeout=4)
-        print(f"[Sheets] Synced +{sender_id} ({role})")
+        print(f"[Sheets] Synced +{sender_id} (new={is_new_lead})")
     except Exception as e:
         print(f"[Sheets] Sync failed for +{sender_id}: {e}")
 
@@ -2067,34 +2118,62 @@ def admin_settings(user: str = Depends(verify_admin)):
                         <summary style="cursor:pointer;color:#5288c1;font-size:13px;font-weight:600;padding:6px 0">📖 Setup instructions (one-time, ~5 min)</summary>
                         <div style="margin-top:10px;padding:14px;background:rgba(0,0,0,0.2);border-radius:10px;border:1px solid rgba(255,255,255,0.05);font-size:12px;line-height:1.6;color:#c5cdd5">
                             <strong style="color:#fff">Step 1 — Create a Google Sheet</strong><br>
-                            Go to <a href="https://sheets.new" target="_blank" style="color:#5288c1">sheets.new</a> and create a new sheet. Add headers in row 1:<br>
-                            <code style="background:#0e1621;padding:2px 6px;border-radius:4px">Phone | Name | Role | Message | Timestamp | New Lead</code>
+                            Go to <a href="https://sheets.new" target="_blank" style="color:#5288c1">sheets.new</a>. Add these <strong>7 column headers</strong> in row 1 (CRM-style):<br>
+                            <code style="background:#0e1621;padding:2px 6px;border-radius:4px">Naam | Class | Phone | Source | Status | Next Call | Notes</code>
                             <br><br>
                             <strong style="color:#fff">Step 2 — Add Apps Script</strong><br>
-                            In the sheet, click <code>Extensions → Apps Script</code>. Replace all code with the script shown below, then save.
+                            In the sheet, click <code>Extensions → Apps Script</code>. Replace all code with the script below and save.
                             <br><br>
                             <strong style="color:#fff">Step 3 — Deploy as Web App</strong><br>
-                            In Apps Script, click <code>Deploy → New deployment → Web app</code>.<br>
-                            • Execute as: <code>Me</code><br>
-                            • Who has access: <code>Anyone</code><br>
-                            Copy the deployment URL (ends with <code>/exec</code>).
+                            Apps Script → <code>Deploy → New deployment → Web app</code>.<br>
+                            • Execute as: <code>Me</code> &nbsp; • Who has access: <code>Anyone</code><br>
+                            Copy the URL (ends with <code>/exec</code>).
                             <br><br>
                             <strong style="color:#fff">Step 4 — Add to Railway</strong><br>
-                            Railway → Variables → New: <code>GOOGLE_SHEETS_WEBHOOK</code> = paste the URL.<br>
-                            Railway redeploys; sync activates instantly.
+                            Railway → Variables → <code>GOOGLE_SHEETS_WEBHOOK</code> = paste URL → save.
                             <br><br>
-                            <strong style="color:#fff">Apps Script code to paste:</strong>
-                            <pre style="background:#0a1320;padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin-top:6px;color:#a5b4c4">function doPost(e) {{
+                            <strong style="color:#fff">Auto-detected fields:</strong>
+                            <ul style="margin:4px 0 0 18px;padding:0">
+                                <li><strong>Naam</strong> — from WhatsApp profile</li>
+                                <li><strong>Class</strong> — detected from message ("Class 9", "10th", "Pre-Primary", etc.)</li>
+                                <li><strong>Phone</strong> — student's number</li>
+                                <li><strong>Source</strong> — Meta Ad / Referral / Website / WhatsApp / Instagram</li>
+                                <li><strong>Status</strong> — starts as "New" for new leads</li>
+                                <li><strong>Next Call & Notes</strong> — you fill these manually; the bot will <em>NEVER overwrite them</em></li>
+                            </ul>
+                            <br>
+                            <strong style="color:#fff">Apps Script code (copy and paste):</strong>
+                            <pre style="background:#0a1320;padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin-top:6px;color:#a5b4c4">// Cols: A=Naam B=Class C=Phone D=Source E=Status F=Next Call G=Notes
+function doPost(e) {{
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = JSON.parse(e.postData.contents);
-  var phones = sheet.getRange("A:A").getValues().map(function(r) {{ return r[0]; }});
-  var rowIdx = phones.indexOf(data.phone) + 1;
-  if (rowIdx < 2) {{
-    sheet.appendRow([data.phone, data.name, data.role, data.message, data.timestamp, data.is_new_lead ? "YES" : ""]);
+  var d = JSON.parse(e.postData.contents);
+  var lastRow = sheet.getLastRow();
+  var phones = lastRow >= 2 ? sheet.getRange(2, 3, lastRow - 1, 1).getValues().map(function(r){{return r[0];}}) : [];
+  var rowIdx = phones.indexOf(d.phone);
+
+  if (rowIdx === -1) {{
+    // New lead — write all auto fields, leave Next Call + Notes blank for admin
+    sheet.appendRow([
+      d.naam || "",
+      d.class || "",
+      d.phone || "",
+      d.source || "WhatsApp",
+      d.status || "New",
+      "",  // Next Call (admin fills)
+      ""   // Notes (admin fills)
+    ]);
   }} else {{
-    sheet.getRange(rowIdx, 1, 1, 6).setValues([[data.phone, data.name, data.role, data.message, data.timestamp, data.is_new_lead ? "YES" : ""]]);
+    // Existing lead — update auto fields ONLY, preserve admin-edited columns
+    var sheetRow = rowIdx + 2;
+    if (d.naam)   sheet.getRange(sheetRow, 1).setValue(d.naam);
+    if (d.class)  sheet.getRange(sheetRow, 2).setValue(d.class);
+    sheet.getRange(sheetRow, 3).setValue(d.phone);
+    // Source / Status / Next Call / Notes are NEVER overwritten on follow-ups
   }}
-  return ContentService.createTextOutput(JSON.stringify({{status:"ok"}})).setMimeType(ContentService.MimeType.JSON);
+
+  return ContentService
+    .createTextOutput(JSON.stringify({{ok: true}}))
+    .setMimeType(ContentService.MimeType.JSON);
 }}</pre>
                         </div>
                     </details>
