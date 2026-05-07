@@ -235,19 +235,61 @@ def _sync_to_google_sheets(
         print(f"[Sheets] Sync failed for +{sender_id}: {e}")
 
 
-def _notify_admin_of_new_student(sender_id: str, name: str | None, first_message: str):
-    """Sends a WhatsApp alert to the admin number when a brand-new student messages the bot.
-
-    Multiple admin numbers can be configured (comma-separated) via ADMIN_NOTIFY_NUMBER.
-    Silently skips if env var is not set.
-    Note: WhatsApp's 24h rule applies — the admin must have messaged the bot in the
-    last 24 hours OR a message template must be approved by Meta.
+def _whatsapp_broadcast(numbers_csv: str, message_text: str, label: str = "Notify"):
     """
-    admin_numbers_raw = os.getenv("ADMIN_NOTIFY_NUMBER", "").strip()
-    if not admin_numbers_raw:
+    Sends a WhatsApp text to a comma-separated list of numbers (no '+' needed).
+    Silently skips if list is empty.
+    24h-window note: WhatsApp only allows free-form messages to numbers
+    that have messaged the bot in the last 24h, OR via an approved template.
+    """
+    if not numbers_csv.strip():
+        return
+    numbers = [n.strip().lstrip("+") for n in numbers_csv.split(",") if n.strip()]
+    for num in numbers:
+        try:
+            result = send_whatsapp_message(num, message_text)
+            if result is not None:
+                print(f"[{label}] Sent WhatsApp -> +{num}")
+            else:
+                print(f"[{label}] Failed -> +{num} (24h window or token issue)")
+        except Exception as e:
+            print(f"[{label}] Exception -> +{num}: {e}")
+
+
+def _notify_team_of_new_lead(sender_id: str, name: str | None, first_message: str,
+                             class_label: str = "", source: str = ""):
+    """
+    Sends a WhatsApp 'new student lead' alert to the TEAM numbers.
+    Configure TEAM_NOTIFY_NUMBERS env var (comma-separated, with country code, no +).
+    """
+    team_numbers = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
+    if not team_numbers:
         return
 
-    admin_numbers = [n.strip().lstrip("+") for n in admin_numbers_raw.split(",") if n.strip()]
+    name_display = (name or "Unknown").strip()
+    msg_preview = first_message.strip()[:200]
+    notification = (
+        f"🔔 *NEW LEAD — Please call!*\n"
+        f"\n"
+        f"👤 *Name:* {name_display}\n"
+        f"📱 *Number:* +{sender_id}\n"
+        f"🎓 *Class:* {class_label or 'TBD'}\n"
+        f"📍 *Source:* {source or 'WhatsApp'}\n"
+        f"💬 *First message:* {msg_preview!r}\n"
+        f"\n"
+        f"⚡ Call within 2 min or admin will be alerted.\n"
+        f"📊 Open dashboard to mark as 'Called'."
+    )
+    _whatsapp_broadcast(team_numbers, notification, label="Team-Notify")
+
+
+def _notify_admin_of_new_student(sender_id: str, name: str | None, first_message: str):
+    """
+    Sends a WhatsApp 'new student' summary to ADMIN numbers (CC).
+    Configure ADMIN_NOTIFY_NUMBER env var (comma-separated, with country code, no +).
+    Note: WhatsApp 24h rule applies.
+    """
+    admin_numbers = os.getenv("ADMIN_NOTIFY_NUMBER", "").strip()
     if not admin_numbers:
         return
 
@@ -262,18 +304,31 @@ def _notify_admin_of_new_student(sender_id: str, name: str | None, first_message
         f"📱 *Number:* +{sender_id}\n"
         f"💬 *First message:* {msg_preview!r}\n"
         f"\n"
-        f"📊 Check the admin dashboard to reply."
+        f"📊 Team has been notified to call."
     )
+    _whatsapp_broadcast(admin_numbers, notification, label="Admin-Notify")
 
-    for admin_num in admin_numbers:
-        try:
-            result = send_whatsapp_message(admin_num, notification)
-            if result is not None:
-                print(f"[Notify] Sent new-student alert for +{sender_id} to +{admin_num}")
-            else:
-                print(f"[Notify] Failed to alert +{admin_num} (returned None) — likely 24h window or token issue")
-        except Exception as e:
-            print(f"[Notify] Exception sending alert to +{admin_num}: {e}")
+
+def _notify_admin_lead_pending(sender_id: str, name: str, class_label: str, mins_waiting: int):
+    """
+    Sends a WhatsApp message to ADMIN numbers when a lead has been waiting
+    (called every 5 minutes from the reminder loop until it's marked called).
+    """
+    admin_numbers = os.getenv("ADMIN_NOTIFY_NUMBER", "").strip()
+    if not admin_numbers:
+        return
+
+    notification = (
+        f"📞 *Lead still pending — {mins_waiting} min waiting*\n"
+        f"\n"
+        f"👤 *Name:* {name}\n"
+        f"📱 *Number:* +{sender_id}\n"
+        f"🎓 *Class:* {class_label or 'TBD'}\n"
+        f"\n"
+        f"⚠️ Team has not marked this lead as called yet.\n"
+        f"📊 Please follow up or check with the team."
+    )
+    _whatsapp_broadcast(admin_numbers, notification, label="Admin-Reminder")
 
 load_dotenv()
 
@@ -373,7 +428,7 @@ async def reminder_loop():
                 age_since_last_remind = (now_utc - (last_remind or created)).total_seconds()
                 age_since_creation = (now_utc - created).total_seconds()
 
-                # 1. Re-push to team every 5 minutes
+                # 1. Re-push to team every 5 minutes — push + WhatsApp message to admin
                 if last_remind is None or age_since_last_remind >= REMINDER_INTERVAL_SECONDS:
                     send_web_push(
                         title="📞 Reminder — call this lead!",
@@ -382,6 +437,9 @@ async def reminder_loop():
                         tag=f"remind-{sender_id}",
                         role="team",
                     )
+                    # Also send a WhatsApp reminder to admin so they know team hasn't acted
+                    mins_waiting = int(age_since_creation / 60)
+                    _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
                     database.mark_lead_reminded(sender_id)
 
                 # 2. Escalate to admin if not handled in 2 minutes
@@ -393,6 +451,9 @@ async def reminder_loop():
                         tag=f"escalate-{sender_id}",
                         role="super_admin",
                     )
+                    # WhatsApp escalation to admin
+                    mins_waiting = int(age_since_creation / 60)
+                    _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
                     database.mark_lead_admin_notified(sender_id)
         except Exception as e:
             print(f"[ReminderLoop] error: {e}")
@@ -533,13 +594,12 @@ async def handle_whatsapp_message(request: Request):
 
                             contact_name = contacts_by_wa_id.get(sender_id)
 
-                            # If this is the very first message from this student, alert admin
+                            # If this is the very first message from this student
                             if not history:
-                                _notify_admin_of_new_student(sender_id, contact_name, message_text)
-
-                                # Create a lead reminder so the team needs to call this student
                                 detected_class = _detect_class(message_text)
                                 detected_source = _detect_source(message_text)
+
+                                # Create a lead reminder so the team needs to call this student
                                 database.add_lead_reminder(
                                     sender_id=sender_id,
                                     naam=contact_name or "Unknown",
@@ -548,7 +608,14 @@ async def handle_whatsapp_message(request: Request):
                                     source=detected_source,
                                 )
 
-                                # Push to TEAM only — they handle calling
+                                # WhatsApp notification: TEAM gets the lead, ADMIN gets a CC
+                                _notify_team_of_new_lead(
+                                    sender_id, contact_name, message_text,
+                                    class_label=detected_class, source=detected_source,
+                                )
+                                _notify_admin_of_new_student(sender_id, contact_name, message_text)
+
+                                # Web push to TEAM browsers (they handle calling)
                                 send_web_push(
                                     title="🔔 New Lead — Call required!",
                                     body=f"{contact_name or '+' + sender_id} ({detected_class or 'class TBD'}): {message_text[:60]}",
