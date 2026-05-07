@@ -1293,6 +1293,156 @@ a { color: #5288c1; text-decoration: none; }
     /* Banners */
     .banner { margin: 8px 12px 0; padding: 9px 13px; font-size: 12px; }
 }
+
+/* ===== PENDING LEADS PANEL (sidebar) ===== */
+.pending-panel {
+    background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(217,119,6,0.10));
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 10px 12px;
+    border-left: 3px solid #f59e0b;
+}
+.pending-panel-title {
+    font-size: 11px;
+    color: #f59e0b;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.pending-lead {
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.pending-lead:last-child { margin-bottom: 0; }
+.pending-lead .name { font-weight: 600; color: #fff; font-size: 13px; }
+.pending-lead .meta { font-size: 11px; color: #95a3b1; margin: 2px 0 6px; }
+.pending-lead .actions { display: flex; gap: 6px; }
+.pending-lead .btn {
+    flex: 1;
+    padding: 7px 8px;
+    border-radius: 8px;
+    border: none;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.pending-lead .btn-open {
+    background: rgba(82,136,193,0.2);
+    color: #5288c1;
+    border: 1px solid rgba(82,136,193,0.3);
+}
+.pending-lead .btn-open:hover { background: rgba(82,136,193,0.3); }
+.pending-lead .btn-called {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    box-shadow: 0 2px 8px rgba(16,185,129,0.3);
+}
+.pending-lead .btn-called:hover { transform: translateY(-1px); }
+
+/* ===== MARK CALLED MODAL ===== */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.modal-backdrop.open { display: flex; animation: fadeInUp 0.25s; }
+.modal-card {
+    background: rgba(28,43,58,0.95);
+    backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 22px;
+    max-width: 520px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.modal-card h2 { margin: 0 0 4px; font-size: 18px; color: #fff; }
+.modal-card .modal-sub { font-size: 12px; color: #95a3b1; margin-bottom: 14px; }
+.modal-card label {
+    display: block;
+    font-size: 11px;
+    color: #95a3b1;
+    margin: 12px 0 5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.modal-card input, .modal-card select, .modal-card textarea {
+    width: 100%;
+    background: rgba(36,47,61,0.6);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: #e6edf3;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: all 0.2s;
+}
+.modal-card textarea { min-height: 70px; resize: vertical; }
+.modal-card input:focus, .modal-card select:focus, .modal-card textarea:focus {
+    background: rgba(43,57,71,0.85);
+    border-color: rgba(82,136,193,0.4);
+}
+.modal-card .csv-hint {
+    font-size: 11px;
+    color: #95a3b1;
+    background: rgba(82,136,193,0.08);
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-top: 8px;
+    border-left: 3px solid #5288c1;
+    line-height: 1.5;
+}
+.modal-card .csv-hint code {
+    background: rgba(0,0,0,0.3);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #5288c1;
+}
+.modal-card .modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+}
+.modal-card .modal-actions button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+}
+.modal-card .btn-cancel {
+    background: rgba(255,255,255,0.06);
+    color: #e6edf3;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+.modal-card .btn-submit {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    box-shadow: 0 4px 14px rgba(16,185,129,0.4);
+}
+.modal-card .btn-submit:hover { transform: translateY(-1px); }
 """
 
 
@@ -1310,6 +1460,62 @@ def _avatar_html(name: str | None, phone: str, size: int = 50) -> str:
         f'<div class="avatar" style="width:{size}px;height:{size}px;background:linear-gradient(135deg,{color},{color2})">'
         f'{initials}</div>'
     )
+
+
+def _render_pending_leads_panel() -> str:
+    """Renders the orange 'pending calls' panel that lives at the top of the sidebar."""
+    leads = database.get_pending_lead_reminders()
+    if not leads:
+        return ""
+
+    items = []
+    for lead in leads[:5]:  # Show max 5 to avoid crowding
+        sender = lead["sender_id"]
+        naam = (lead.get("naam") or "Unknown").replace("<", "&lt;").replace(">", "&gt;")
+        cls = (lead.get("class_label") or "Class TBD").replace("<", "&lt;").replace(">", "&gt;")
+        src = (lead.get("source") or "WhatsApp").replace("<", "&lt;").replace(">", "&gt;")
+        # Compute waiting time
+        created = lead.get("created_at") or ""
+        waited = ""
+        if created:
+            try:
+                dt = datetime.strptime(created.split(".")[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                mins = int((datetime.now(timezone.utc) - dt).total_seconds() / 60)
+                if mins < 1:
+                    waited = "just now"
+                elif mins < 60:
+                    waited = f"{mins} min ago"
+                else:
+                    waited = f"{mins // 60}h {mins % 60}m ago"
+            except Exception:
+                pass
+
+        # Escape values for safe injection into onclick
+        safe_naam = naam.replace("'", "&#39;")
+        safe_cls = cls.replace("'", "&#39;")
+
+        items.append(f"""
+        <div class="pending-lead">
+            <div class="name">{naam}</div>
+            <div class="meta">{cls} · {src} · {waited}</div>
+            <div class="actions">
+                <button class="btn btn-open" onclick="window.location='/admin?chat={sender}'">💬 Open</button>
+                <button class="btn btn-called" onclick="openCalledModal('{sender}', '{safe_naam}', '{safe_cls}', '+{sender}')">✓ Mark Called</button>
+            </div>
+        </div>
+        """)
+
+    extra_count = len(leads) - 5
+    extra_msg = f' · <span style="color:#fff">+{extra_count} more</span>' if extra_count > 0 else ''
+
+    return f"""
+    <div class="pending-panel">
+        <div class="pending-panel-title">
+            <span>📞 Pending Calls ({len(leads)}){extra_msg}</span>
+        </div>
+        {''.join(items)}
+    </div>
+    """
 
 
 def _render_chat_panel(sender_id: str, sent: str, error: str) -> str:
@@ -1496,6 +1702,7 @@ def admin_dashboard(
                     </div>
                     <div class="sidebar-meta" style="margin-top:6px">{len(conversations)} chats · {user.get("username", "?")} ({user.get("role", "?").replace("_", " ")})</div>
                 </div>
+                {_render_pending_leads_panel()}
                 <div class="search-box">
                     <input type="text" id="search" placeholder="🔍 Search students..." oninput="filterChats(this.value)" />
                 </div>
@@ -1713,7 +1920,117 @@ def admin_dashboard(
             // Start polling immediately + every 15 seconds
             pollNewChats();
             setInterval(pollNewChats, 15000);
+
+            // ============================================================
+            // MARK CALLED MODAL — opens from the pending-leads panel
+            // ============================================================
+            window.openCalledModal = function(senderId, naam, classLabel, phone) {{
+                document.getElementById('cm-sender').value = senderId;
+                document.getElementById('cm-naam').value = naam || '';
+                document.getElementById('cm-class').value = classLabel || '';
+                document.getElementById('cm-phone').value = phone || '';
+                document.getElementById('cm-status').value = 'Interested';
+                document.getElementById('cm-next').value = '';
+                document.getElementById('cm-notes').value = '';
+                document.getElementById('called-modal').classList.add('open');
+            }};
+
+            window.closeCalledModal = function() {{
+                document.getElementById('called-modal').classList.remove('open');
+            }};
+
+            window.submitCalled = async function(ev) {{
+                ev.preventDefault();
+                const senderId = document.getElementById('cm-sender').value;
+                const payload = {{
+                    naam:      document.getElementById('cm-naam').value.trim(),
+                    class:     document.getElementById('cm-class').value.trim(),
+                    phone:     document.getElementById('cm-phone').value.trim(),
+                    status:    document.getElementById('cm-status').value.trim(),
+                    next_call: document.getElementById('cm-next').value.trim(),
+                    notes:     document.getElementById('cm-notes').value.trim(),
+                }};
+                try {{
+                    const res = await fetch('/admin/api/leads/' + senderId + '/called', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        credentials: 'include',
+                        body: JSON.stringify(payload),
+                    }});
+                    if (res.ok) {{
+                        closeCalledModal();
+                        location.reload();
+                    }} else {{
+                        alert('Failed: ' + res.status);
+                    }}
+                }} catch (e) {{
+                    alert('Error: ' + e.message);
+                }}
+            }};
+
+            // Allow CSV-style typing into the Status field — auto-split on commas
+            document.addEventListener('DOMContentLoaded', function() {{
+                const csvField = document.getElementById('cm-status');
+                if (!csvField) return;
+                csvField.addEventListener('paste', function(e) {{
+                    const txt = (e.clipboardData || window.clipboardData).getData('text');
+                    if (txt && txt.includes(',')) {{
+                        e.preventDefault();
+                        const parts = txt.split(',').map(s => s.trim());
+                        if (parts[0]) document.getElementById('cm-naam').value = parts[0];
+                        if (parts[1]) document.getElementById('cm-class').value = parts[1];
+                        if (parts[2]) document.getElementById('cm-phone').value = parts[2];
+                        if (parts[3]) document.getElementById('cm-status').value = parts[3];
+                        if (parts[4]) document.getElementById('cm-next').value = parts[4];
+                        if (parts[5]) document.getElementById('cm-notes').value = parts[5];
+                    }}
+                }});
+            }});
         </script>
+
+        <!-- Mark Called modal — shared across all pending-lead buttons -->
+        <div id="called-modal" class="modal-backdrop" onclick="if(event.target===this) closeCalledModal()">
+            <form class="modal-card" onsubmit="submitCalled(event)">
+                <h2>📞 Mark Lead as Called</h2>
+                <div class="modal-sub">Auto-filled fields are detected by the bot. You can also paste a comma-separated row into any field — it'll auto-split.</div>
+                <input type="hidden" id="cm-sender" />
+
+                <label>Naam (Name)</label>
+                <input type="text" id="cm-naam" placeholder="Student's name" />
+
+                <label>Class</label>
+                <input type="text" id="cm-class" placeholder="Class 9 / Junior / etc." />
+
+                <label>Phone</label>
+                <input type="text" id="cm-phone" placeholder="+91..." />
+
+                <label>Status *</label>
+                <select id="cm-status">
+                    <option>Interested</option>
+                    <option>Callback</option>
+                    <option>Not Interested</option>
+                    <option>Wrong Number</option>
+                    <option>Enrolled</option>
+                    <option>Follow-up</option>
+                </select>
+
+                <label>Next Call</label>
+                <input type="text" id="cm-next" placeholder="Kal 5 PM, Tomorrow 10 AM, etc." />
+
+                <label>Notes</label>
+                <textarea id="cm-notes" placeholder="What did the student say? Concerns, requirements..."></textarea>
+
+                <div class="csv-hint">
+                    💡 <strong>Power tip:</strong> Paste a CSV row anywhere and it auto-splits:<br>
+                    <code>Pari Maheshwari, Class 9, +919808884546, Interested, Kal 5 PM, Science weak hai</code>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeCalledModal()">Cancel</button>
+                    <button type="submit" class="btn-submit">✓ Mark Called</button>
+                </div>
+            </form>
+        </div>
     </body>
     </html>
     """
