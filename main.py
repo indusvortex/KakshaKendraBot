@@ -2695,28 +2695,46 @@ def admin_settings(user: str = Depends(verify_admin)):
 function doPost(e) {{
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var d = JSON.parse(e.postData.contents);
+
+  // Normalize phone (strip +, spaces, etc.) so matching works even if
+  // Google Sheets auto-converted '+919...' to a number
+  var normalize = function(p) {{
+    return String(p || "").replace(/[^0-9]/g, "");
+  }};
+  var inbound = normalize(d.phone);
+
   var lastRow = sheet.getLastRow();
-  var phones = lastRow >= 2 ? sheet.getRange(2, 3, lastRow - 1, 1).getValues().map(function(r){{return r[0];}}) : [];
-  var rowIdx = phones.indexOf(d.phone);
+  var phones = lastRow >= 2
+    ? sheet.getRange(2, 3, lastRow - 1, 1).getValues().map(function(r) {{
+        return normalize(r[0]);
+      }})
+    : [];
+  var rowIdx = phones.indexOf(inbound);
 
   if (rowIdx === -1) {{
-    // New lead — write all auto fields, leave Next Call + Notes blank for admin
+    // New lead — write all fields
     sheet.appendRow([
       d.naam || "",
       d.class || "",
-      d.phone || "",
+      "+" + inbound,
       d.source || "WhatsApp",
       d.status || "New",
-      "",  // Next Call (admin fills)
-      ""   // Notes (admin fills)
+      d.next_call || "",
+      d.notes || ""
     ]);
+    // Force phone column to be text — prevents Google from stripping the +
+    var newRow = sheet.getLastRow();
+    sheet.getRange(newRow, 3).setNumberFormat("@").setValue("+" + inbound);
   }} else {{
-    // Existing lead — update auto fields ONLY, preserve admin-edited columns
+    // Existing lead — update fields ONLY when bot sends a non-empty value
     var sheetRow = rowIdx + 2;
-    if (d.naam)   sheet.getRange(sheetRow, 1).setValue(d.naam);
-    if (d.class)  sheet.getRange(sheetRow, 2).setValue(d.class);
-    sheet.getRange(sheetRow, 3).setValue(d.phone);
-    // Source / Status / Next Call / Notes are NEVER overwritten on follow-ups
+    if (d.naam)      sheet.getRange(sheetRow, 1).setValue(d.naam);
+    if (d.class)     sheet.getRange(sheetRow, 2).setValue(d.class);
+    sheet.getRange(sheetRow, 3).setNumberFormat("@").setValue("+" + inbound);
+    if (d.source)    sheet.getRange(sheetRow, 4).setValue(d.source);
+    if (d.status)    sheet.getRange(sheetRow, 5).setValue(d.status);
+    if (d.next_call) sheet.getRange(sheetRow, 6).setValue(d.next_call);
+    if (d.notes)     sheet.getRange(sheetRow, 7).setValue(d.notes);
   }}
 
   return ContentService
