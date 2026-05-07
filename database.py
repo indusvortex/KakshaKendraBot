@@ -125,14 +125,50 @@ def add_lead_reminder(
     phone: str,
     source: str,
 ):
-    """Creates a pending-call reminder for a new lead. No-op if one already exists."""
+    """
+    Creates a pending-call reminder for a new lead.
+    If a reminder already exists for this sender:
+      - If status is already 'pending': leaves it alone (no double-create)
+      - If status is 'called'/'dismissed': RE-OPENS it as 'pending' so the
+        team gets re-alerted (student is messaging again — fresh interest)
+    """
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             '''
             INSERT INTO lead_reminders
-                (sender_id, status, naam, class_label, phone, source)
-            VALUES (?, 'pending', ?, ?, ?, ?)
-            ON CONFLICT(sender_id) DO NOTHING
+                (sender_id, status, naam, class_label, phone, source, created_at,
+                 last_reminded_at, admin_notified_at, called_at)
+            VALUES (?, 'pending', ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, NULL, NULL)
+            ON CONFLICT(sender_id) DO UPDATE SET
+                status            = CASE
+                                      WHEN lead_reminders.status = 'pending'
+                                      THEN lead_reminders.status
+                                      ELSE 'pending'
+                                    END,
+                naam              = excluded.naam,
+                class_label       = excluded.class_label,
+                phone             = excluded.phone,
+                source            = excluded.source,
+                created_at        = CASE
+                                      WHEN lead_reminders.status = 'pending'
+                                      THEN lead_reminders.created_at
+                                      ELSE CURRENT_TIMESTAMP
+                                    END,
+                last_reminded_at  = CASE
+                                      WHEN lead_reminders.status = 'pending'
+                                      THEN lead_reminders.last_reminded_at
+                                      ELSE NULL
+                                    END,
+                admin_notified_at = CASE
+                                      WHEN lead_reminders.status = 'pending'
+                                      THEN lead_reminders.admin_notified_at
+                                      ELSE NULL
+                                    END,
+                called_at         = CASE
+                                      WHEN lead_reminders.status = 'pending'
+                                      THEN lead_reminders.called_at
+                                      ELSE NULL
+                                    END
             ''',
             (sender_id, naam, class_label, phone, source),
         )
@@ -333,11 +369,13 @@ def get_full_conversation(sender_id: str) -> List[Dict]:
 
 
 def delete_chat(sender_id: str) -> int:
-    """Deletes all messages and contact info for a sender. Returns rows deleted."""
+    """Deletes all messages, contact info, AND any lead reminder for a sender.
+    Returns the number of message rows deleted."""
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute('DELETE FROM messages WHERE sender_id = ?', (sender_id,))
         deleted = cur.rowcount
         conn.execute('DELETE FROM chats WHERE sender_id = ?', (sender_id,))
+        conn.execute('DELETE FROM lead_reminders WHERE sender_id = ?', (sender_id,))
         conn.commit()
     return deleted
 
