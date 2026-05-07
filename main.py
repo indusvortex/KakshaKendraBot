@@ -83,8 +83,13 @@ VAPID_PUBLIC, VAPID_PRIVATE = _get_or_create_vapid_keys()
 VAPID_CLAIMS_SUB = os.getenv("VAPID_SUBJECT", "mailto:admin@kakshakendra.com")
 
 
-def send_web_push(title: str, body: str, url: str = "/admin", tag: str = "kk-default"):
-    """Sends a Web Push to all subscribed admin browsers."""
+def send_web_push(title: str, body: str, url: str = "/admin", tag: str = "kk-default", role: str | None = None):
+    """
+    Sends a Web Push to subscribed browsers.
+    role=None -> all subscribers
+    role='team' -> only team browsers (for new lead alerts)
+    role='super_admin' -> only admin browsers (for escalations)
+    """
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
@@ -99,8 +104,9 @@ def send_web_push(title: str, body: str, url: str = "/admin", tag: str = "kk-def
         "icon": "/favicon.ico",
     })
 
-    subs = database.get_all_push_subscriptions()
+    subs = database.get_push_subscriptions(role)
     if not subs:
+        print(f"[Push] No subscriptions for role={role!r}")
         return
 
     sent, failed = 0, 0
@@ -274,32 +280,137 @@ load_dotenv()
 # Verify Token used by Meta to verify webhook
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "my_secure_verify_token")
 
-# Admin credentials for /admin dashboard
+# Admin credentials
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "kakshakendra2026")
+# Team credentials (limited access — chat only, no settings)
+TEAM_USERNAME = os.getenv("TEAM_USERNAME", "Team")
+TEAM_PASSWORD = os.getenv("TEAM_PASSWORD", "kakshakendra2026")
 security = HTTPBasic()
 
 
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_user = secrets.compare_digest(credentials.username, ADMIN_USERNAME)
-    correct_pass = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
-    if not (correct_user and correct_pass):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
+def _check_admin(c: HTTPBasicCredentials) -> bool:
+    return (
+        secrets.compare_digest(c.username, ADMIN_USERNAME)
+        and secrets.compare_digest(c.password, ADMIN_PASSWORD)
+    )
+
+
+def _check_team(c: HTTPBasicCredentials) -> bool:
+    return (
+        secrets.compare_digest(c.username, TEAM_USERNAME)
+        and secrets.compare_digest(c.password, TEAM_PASSWORD)
+    )
+
+
+def verify_user(credentials: HTTPBasicCredentials = Depends(security)) -> dict:
+    """
+    Allows both super-admin and team to access dashboard chat features.
+    Returns {'username', 'role'} where role is 'super_admin' or 'team'.
+    """
+    if _check_admin(credentials):
+        return {"username": credentials.username, "role": "super_admin"}
+    if _check_team(credentials):
+        return {"username": credentials.username, "role": "team"}
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid credentials",
+        headers={"WWW-Authenticate": "Basic"},
+    )
+
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)) -> dict:
+    """Super-admin only — used for settings, exports, system actions."""
+    if _check_admin(credentials):
+        return {"username": credentials.username, "role": "super_admin"}
+    raise HTTPException(
+        status_code=401,
+        detail="Super admin access required",
+        headers={"WWW-Authenticate": "Basic"},
+    )
 
 # Track processed message IDs to avoid duplicate processing
 # (WhatsApp can retry webhooks, sending the same message twice)
 processed_message_ids: set = set()
 
+async def reminder_loop():
+    """
+    Background loop that:
+    - Re-pushes pending lead reminders to TEAM every 5 minutes.
+    - Escalates to SUPER_ADMIN if a lead has been waiting > 2 minutes
+      and no team member has responded yet.
+    Runs forever in the background.
+    """
+    import asyncio
+    REMINDER_INTERVAL_SECONDS = 300   # 5 minutes between team pushes
+    ESCALATE_AFTER_SECONDS = 120      # 2 minutes -> notify admin
+    POLL_EVERY_SECONDS = 30
+
+    while True:
+        try:
+            pending = database.get_pending_lead_reminders()
+            now_utc = datetime.now(timezone.utc)
+            for lead in pending:
+                sender_id = lead["sender_id"]
+                naam = lead.get("naam") or "Unknown"
+                class_label = lead.get("class_label") or ""
+
+                # Parse timestamps stored as SQLite UTC strings
+                def _parse(ts: str | None):
+                    if not ts:
+                        return None
+                    try:
+                        return datetime.strptime(
+                            ts.split(".")[0], "%Y-%m-%d %H:%M:%S"
+                        ).replace(tzinfo=timezone.utc)
+                    except Exception:
+                        return None
+
+                last_remind = _parse(lead.get("last_reminded_at"))
+                admin_notified = _parse(lead.get("admin_notified_at"))
+                created = _parse(lead.get("created_at")) or now_utc
+
+                age_since_last_remind = (now_utc - (last_remind or created)).total_seconds()
+                age_since_creation = (now_utc - created).total_seconds()
+
+                # 1. Re-push to team every 5 minutes
+                if last_remind is None or age_since_last_remind >= REMINDER_INTERVAL_SECONDS:
+                    send_web_push(
+                        title="📞 Reminder — call this lead!",
+                        body=f"{naam} ({class_label or 'class TBD'}) — still pending",
+                        url=f"/admin?chat={sender_id}",
+                        tag=f"remind-{sender_id}",
+                        role="team",
+                    )
+                    database.mark_lead_reminded(sender_id)
+
+                # 2. Escalate to admin if not handled in 2 minutes
+                if admin_notified is None and age_since_creation >= ESCALATE_AFTER_SECONDS:
+                    send_web_push(
+                        title="🚨 ESCALATION — Team didn't call!",
+                        body=f"{naam} ({class_label or 'class TBD'}) — waiting >2 min",
+                        url=f"/admin?chat={sender_id}",
+                        tag=f"escalate-{sender_id}",
+                        role="super_admin",
+                    )
+                    database.mark_lead_admin_notified(sender_id)
+        except Exception as e:
+            print(f"[ReminderLoop] error: {e}")
+        await asyncio.sleep(POLL_EVERY_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     print("Initializing Database...")
     database.init_db()
-    yield
+    # Start the reminder background loop
+    task = asyncio.create_task(reminder_loop())
+    print("[ReminderLoop] started")
+    try:
+        yield
+    finally:
+        task.cancel()
 
 app = FastAPI(title="WhatsApp AI Coach Bot", lifespan=lifespan)
 
@@ -425,13 +536,27 @@ async def handle_whatsapp_message(request: Request):
                             # If this is the very first message from this student, alert admin
                             if not history:
                                 _notify_admin_of_new_student(sender_id, contact_name, message_text)
-                                # Web push to all subscribed admin browsers
+
+                                # Create a lead reminder so the team needs to call this student
+                                detected_class = _detect_class(message_text)
+                                detected_source = _detect_source(message_text)
+                                database.add_lead_reminder(
+                                    sender_id=sender_id,
+                                    naam=contact_name or "Unknown",
+                                    class_label=detected_class,
+                                    phone="+" + sender_id,
+                                    source=detected_source,
+                                )
+
+                                # Push to TEAM only — they handle calling
                                 send_web_push(
-                                    title="🔔 New Student Lead!",
-                                    body=f"{contact_name or '+' + sender_id}: {message_text[:80]}",
+                                    title="🔔 New Lead — Call required!",
+                                    body=f"{contact_name or '+' + sender_id} ({detected_class or 'class TBD'}): {message_text[:60]}",
                                     url=f"/admin?chat={sender_id}",
                                     tag=f"new-{sender_id}",
+                                    role="team",
                                 )
+
                                 # Sync new lead to Google Sheets
                                 _sync_to_google_sheets(
                                     sender_id, contact_name, message_text,
@@ -1298,7 +1423,7 @@ def admin_dashboard(
     chat: str = "",
     sent: str = "",
     error: str = "",
-    user: str = Depends(verify_admin),
+    user: dict = Depends(verify_user),
 ):
     """Telegram-style dashboard: sidebar with conversations + main chat panel."""
     conversations = database.get_all_conversations()
@@ -1367,9 +1492,9 @@ def admin_dashboard(
                 <div class="sidebar-header">
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
                         <div class="sidebar-title">🎓 Kaksha Kendra Bot {unread_html}</div>
-                        <a href="/admin/settings" title="Bot Health & Settings" style="color:#7d8e9c;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s" onmouseover="this.style.background='rgba(82,136,193,0.18)';this.style.color='#5288c1'" onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.color='#7d8e9c'">⚙️</a>
+                        {('<a href="/admin/settings" title="Bot Health & Settings" style="color:#7d8e9c;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s">⚙️</a>') if user.get("role") == "super_admin" else ('<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid rgba(245,158,11,0.3)">TEAM</span>')}
                     </div>
-                    <div class="sidebar-meta" style="margin-top:6px">{len(conversations)} chats · auto-refresh 60s</div>
+                    <div class="sidebar-meta" style="margin-top:6px">{len(conversations)} chats · {user.get("username", "?")} ({user.get("role", "?").replace("_", " ")})</div>
                 </div>
                 <div class="search-box">
                     <input type="text" id="search" placeholder="🔍 Search students..." oninput="filterChats(this.value)" />
@@ -1595,7 +1720,7 @@ def admin_dashboard(
 
 
 @app.get("/admin/chat/{sender_id}", response_class=HTMLResponse)
-def admin_chat_view_redirect(sender_id: str, sent: str = "", error: str = "", user: str = Depends(verify_admin)):
+def admin_chat_view_redirect(sender_id: str, sent: str = "", error: str = "", user: dict = Depends(verify_user)):
     """Backwards-compat: redirect old chat URLs to new query-string format."""
     qs = f"?chat={sender_id}"
     if sent:
@@ -1606,7 +1731,7 @@ def admin_chat_view_redirect(sender_id: str, sent: str = "", error: str = "", us
 
 
 @app.post("/admin/chat/{sender_id}/send")
-def admin_send_message(sender_id: str, message: str = Form(...), user: str = Depends(verify_admin)):
+def admin_send_message(sender_id: str, message: str = Form(...), user: dict = Depends(verify_user)):
     """Sends a manual message from admin to a student via WhatsApp."""
     message = message.strip()
     if not message:
@@ -1631,7 +1756,7 @@ async def admin_send_media(
     sender_id: str,
     file: UploadFile = File(...),
     caption: str = Form(""),
-    user: str = Depends(verify_admin),
+    user: dict = Depends(verify_user),
 ):
     """Uploads a media file to WhatsApp and sends it to the student."""
     file_bytes = await file.read()
@@ -2473,14 +2598,14 @@ def manifest():
 
 
 @app.get("/admin/push/vapid-key")
-def push_vapid_key(user: str = Depends(verify_admin)):
+def push_vapid_key(user: dict = Depends(verify_user)):
     """Returns the public VAPID key — browser uses it to subscribe."""
-    return {"publicKey": VAPID_PUBLIC}
+    return {"publicKey": VAPID_PUBLIC, "role": user["role"]}
 
 
 @app.post("/admin/push/subscribe")
-async def push_subscribe(request: Request, user: str = Depends(verify_admin)):
-    """Saves a browser push subscription so we can send notifications to it."""
+async def push_subscribe(request: Request, user: dict = Depends(verify_user)):
+    """Saves a browser push subscription tagged with the user's role."""
     body = await request.json()
     endpoint = body.get("endpoint", "")
     keys = body.get("keys", {}) or {}
@@ -2488,12 +2613,12 @@ async def push_subscribe(request: Request, user: str = Depends(verify_admin)):
     auth = keys.get("auth", "")
     if not (endpoint and p256dh and auth):
         raise HTTPException(status_code=400, detail="Missing subscription fields")
-    database.add_push_subscription(endpoint, p256dh, auth)
-    return {"status": "subscribed"}
+    database.add_push_subscription(endpoint, p256dh, auth, role=user["role"])
+    return {"status": "subscribed", "role": user["role"]}
 
 
 @app.post("/admin/push/unsubscribe")
-async def push_unsubscribe(request: Request, user: str = Depends(verify_admin)):
+async def push_unsubscribe(request: Request, user: dict = Depends(verify_user)):
     """Removes a browser push subscription."""
     body = await request.json()
     endpoint = body.get("endpoint", "")
@@ -2585,6 +2710,98 @@ def call_redirect(number: str):
 
 
 @app.get("/admin/api/conversations")
-def admin_api_conversations(user: str = Depends(verify_admin)):
+def admin_api_conversations(user: dict = Depends(verify_user)):
     """JSON endpoint listing all conversations."""
     return {"conversations": database.get_all_conversations()}
+
+
+# ============================================================
+# Lead Reminder API — used by team and admin to track who to call
+# ============================================================
+
+@app.get("/admin/api/leads/pending")
+def api_leads_pending(user: dict = Depends(verify_user)):
+    """Returns the list of leads still waiting for a call."""
+    return {"pending": database.get_pending_lead_reminders()}
+
+
+@app.post("/admin/api/leads/{sender_id}/called")
+async def api_lead_called(
+    sender_id: str,
+    request: Request,
+    user: dict = Depends(verify_user),
+):
+    """
+    Marks a lead as called. Accepts JSON:
+      { "csv": "Naam, Class, Phone, Status, Next Call, Notes" }
+    Or:
+      { "naam": "...", "class": "...", "phone": "...",
+        "status": "called", "next_call": "...", "notes": "..." }
+
+    Existing reminder values are kept if a field is empty/missing — bot's
+    auto-detected Naam/Class/Phone are pre-filled so team usually only
+    needs to type Status, Next Call and Notes.
+    """
+    body = await request.json()
+    csv_line = (body.get("csv") or "").strip()
+
+    fields: list[str] = []
+    if csv_line:
+        # User-friendly comma-separated input
+        fields = [f.strip() for f in csv_line.split(",")]
+
+    def pick(idx: int, key: str) -> str | None:
+        if idx < len(fields) and fields[idx]:
+            return fields[idx]
+        v = body.get(key)
+        return v.strip() if isinstance(v, str) and v.strip() else None
+
+    naam = pick(0, "naam")
+    class_label = pick(1, "class")
+    phone = pick(2, "phone")
+    status = pick(3, "status") or "called"
+    next_call = pick(4, "next_call")
+    notes = pick(5, "notes")
+
+    database.mark_lead_called(
+        sender_id=sender_id,
+        naam=naam,
+        class_label=class_label,
+        phone=phone,
+        next_call=next_call,
+        notes=notes,
+        status=status,
+    )
+
+    # Push the updated lead to Google Sheet so the CRM stays in sync
+    sheets_payload = database.get_lead_reminder(sender_id)
+    if sheets_payload and os.getenv("GOOGLE_SHEETS_WEBHOOK"):
+        try:
+            import requests
+            requests.post(
+                os.getenv("GOOGLE_SHEETS_WEBHOOK"),
+                json={
+                    "phone": sheets_payload.get("phone") or "+" + sender_id,
+                    "naam": sheets_payload.get("naam") or "",
+                    "class": sheets_payload.get("class_label") or "",
+                    "source": sheets_payload.get("source") or "",
+                    "status": sheets_payload.get("status") or "called",
+                    "next_call": sheets_payload.get("next_call") or "",
+                    "notes": sheets_payload.get("notes") or "",
+                    "is_new_lead": False,
+                },
+                timeout=4,
+            )
+        except Exception as e:
+            print(f"[Sheets] Lead update sync failed: {e}")
+
+    print(f"[Lead] +{sender_id} marked '{status}' by {user['username']} ({user['role']})")
+    return {"status": "ok", "lead": sheets_payload}
+
+
+@app.post("/admin/api/leads/{sender_id}/dismiss")
+def api_lead_dismiss(sender_id: str, user: dict = Depends(verify_admin)):
+    """Admin-only: dismiss a lead reminder without calling (junk/spam/etc.)."""
+    database.mark_lead_called(sender_id=sender_id, status="dismissed")
+    print(f"[Lead] +{sender_id} dismissed by admin {user['username']}")
+    return {"status": "dismissed"}

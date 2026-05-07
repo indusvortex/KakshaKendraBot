@@ -37,22 +37,48 @@ def init_db():
                 endpoint   TEXT PRIMARY KEY,
                 p256dh     TEXT NOT NULL,
                 auth       TEXT NOT NULL,
+                role       TEXT DEFAULT 'super_admin',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        # Add role column to existing push_subs tables (safe ALTER)
+        try:
+            conn.execute("ALTER TABLE push_subs ADD COLUMN role TEXT DEFAULT 'super_admin'")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS lead_reminders (
+                sender_id          TEXT PRIMARY KEY,
+                status             TEXT DEFAULT 'pending',
+                naam               TEXT,
+                class_label        TEXT,
+                phone              TEXT,
+                source             TEXT,
+                next_call          TEXT,
+                notes              TEXT,
+                created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_reminded_at   DATETIME,
+                admin_notified_at  DATETIME,
+                called_at          DATETIME
             )
         ''')
         conn.commit()
 
 
-def add_push_subscription(endpoint: str, p256dh: str, auth: str):
-    """Saves (or replaces) a browser's push subscription."""
+def add_push_subscription(endpoint: str, p256dh: str, auth: str, role: str = "super_admin"):
+    """Saves (or replaces) a browser's push subscription, tagged with the user's role."""
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             '''
-            INSERT INTO push_subs (endpoint, p256dh, auth)
-            VALUES (?, ?, ?)
-            ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth
+            INSERT INTO push_subs (endpoint, p256dh, auth, role)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(endpoint) DO UPDATE SET
+                p256dh=excluded.p256dh,
+                auth=excluded.auth,
+                role=excluded.role
             ''',
-            (endpoint, p256dh, auth),
+            (endpoint, p256dh, auth, role),
         )
         conn.commit()
 
@@ -64,12 +90,126 @@ def remove_push_subscription(endpoint: str):
         conn.commit()
 
 
-def get_all_push_subscriptions() -> List[Dict]:
-    """Returns every saved push subscription for fanout."""
+def get_push_subscriptions(role: str | None = None) -> List[Dict]:
+    """
+    Returns push subscriptions. If role is given, only returns subs for that role.
+    role values: 'super_admin', 'team', or None (all).
+    """
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute('SELECT endpoint, p256dh, auth FROM push_subs').fetchall()
+        if role:
+            rows = conn.execute(
+                "SELECT endpoint, p256dh, auth, role FROM push_subs WHERE role = ?",
+                (role,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT endpoint, p256dh, auth, role FROM push_subs"
+            ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_all_push_subscriptions() -> List[Dict]:
+    """Backwards-compat: returns every saved push subscription."""
+    return get_push_subscriptions(None)
+
+
+# ============================================================
+# Lead Reminders
+# ============================================================
+
+def add_lead_reminder(
+    sender_id: str,
+    naam: str,
+    class_label: str,
+    phone: str,
+    source: str,
+):
+    """Creates a pending-call reminder for a new lead. No-op if one already exists."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            '''
+            INSERT INTO lead_reminders
+                (sender_id, status, naam, class_label, phone, source)
+            VALUES (?, 'pending', ?, ?, ?, ?)
+            ON CONFLICT(sender_id) DO NOTHING
+            ''',
+            (sender_id, naam, class_label, phone, source),
+        )
+        conn.commit()
+
+
+def get_pending_lead_reminders() -> List[Dict]:
+    """Returns all leads with status='pending' (still waiting for someone to call)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            '''
+            SELECT * FROM lead_reminders
+            WHERE status = 'pending'
+            ORDER BY created_at DESC
+            '''
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_lead_reminded(sender_id: str):
+    """Updates the last_reminded_at timestamp."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE lead_reminders SET last_reminded_at = CURRENT_TIMESTAMP WHERE sender_id = ?",
+            (sender_id,),
+        )
+        conn.commit()
+
+
+def mark_lead_admin_notified(sender_id: str):
+    """Sets admin_notified_at — used so we only escalate once."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE lead_reminders SET admin_notified_at = CURRENT_TIMESTAMP WHERE sender_id = ?",
+            (sender_id,),
+        )
+        conn.commit()
+
+
+def mark_lead_called(
+    sender_id: str,
+    naam: str | None = None,
+    class_label: str | None = None,
+    phone: str | None = None,
+    next_call: str | None = None,
+    notes: str | None = None,
+    status: str = "called",
+):
+    """Closes a lead reminder when the team confirms they called."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            '''
+            UPDATE lead_reminders SET
+                status = ?,
+                naam = COALESCE(?, naam),
+                class_label = COALESCE(?, class_label),
+                phone = COALESCE(?, phone),
+                next_call = COALESCE(?, next_call),
+                notes = COALESCE(?, notes),
+                called_at = CURRENT_TIMESTAMP
+            WHERE sender_id = ?
+            ''',
+            (status, naam, class_label, phone, next_call, notes, sender_id),
+        )
+        conn.commit()
+
+
+def get_lead_reminder(sender_id: str) -> Dict | None:
+    """Returns one lead reminder."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM lead_reminders WHERE sender_id = ?",
+            (sender_id,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def upsert_contact(sender_id: str, display_name: str | None):
