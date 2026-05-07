@@ -143,6 +143,41 @@ def to_ist(utc_str: str | None, fmt: str = "%d %b %Y, %I:%M %p") -> str:
         return utc_str
 
 
+def _sync_to_google_sheets(
+    sender_id: str,
+    name: str | None,
+    message: str,
+    role: str,
+    is_new_lead: bool = False,
+):
+    """
+    Sends lead/message data to a Google Apps Script web app, which appends
+    or updates a row in the configured Google Sheet.
+    Silently skips if GOOGLE_SHEETS_WEBHOOK env var is not set.
+    Runs in the request flow but with a short timeout so it never blocks the bot.
+    """
+    webhook_url = os.getenv("GOOGLE_SHEETS_WEBHOOK", "").strip()
+    if not webhook_url:
+        return
+
+    payload = {
+        "phone": "+" + sender_id,
+        "name": (name or "Unknown").strip(),
+        "role": role,  # "user" or "assistant"
+        "message": message[:300],
+        "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+        "is_new_lead": is_new_lead,
+    }
+
+    try:
+        import requests
+        # Short timeout so a slow Sheets script doesn't slow down replies
+        requests.post(webhook_url, json=payload, timeout=4)
+        print(f"[Sheets] Synced +{sender_id} ({role})")
+    except Exception as e:
+        print(f"[Sheets] Sync failed for +{sender_id}: {e}")
+
+
 def _notify_admin_of_new_student(sender_id: str, name: str | None, first_message: str):
     """Sends a WhatsApp alert to the admin number when a brand-new student messages the bot.
 
@@ -334,9 +369,10 @@ async def handle_whatsapp_message(request: Request):
                             #    so the current message doesn't appear twice in the AI prompt
                             history = database.get_recent_messages(sender_id, limit=10)
 
+                            contact_name = contacts_by_wa_id.get(sender_id)
+
                             # If this is the very first message from this student, alert admin
                             if not history:
-                                contact_name = contacts_by_wa_id.get(sender_id)
                                 _notify_admin_of_new_student(sender_id, contact_name, message_text)
                                 # Web push to all subscribed admin browsers
                                 send_web_push(
@@ -345,14 +381,22 @@ async def handle_whatsapp_message(request: Request):
                                     url=f"/admin?chat={sender_id}",
                                     tag=f"new-{sender_id}",
                                 )
+                                # Sync new lead to Google Sheets
+                                _sync_to_google_sheets(
+                                    sender_id, contact_name, message_text,
+                                    role="user", is_new_lead=True,
+                                )
                             else:
                                 # Existing student replying — send a softer push
-                                contact_name = contacts_by_wa_id.get(sender_id)
                                 send_web_push(
                                     title="💬 " + (contact_name or "+" + sender_id),
                                     body=message_text[:120],
                                     url=f"/admin?chat={sender_id}",
                                     tag=f"chat-{sender_id}",
+                                )
+                                # Sync follow-up message to Google Sheets
+                                _sync_to_google_sheets(
+                                    sender_id, contact_name, message_text, role="user",
                                 )
 
                             # 2. Save current user message to DB
@@ -2011,6 +2055,49 @@ def admin_settings(user: str = Depends(verify_admin)):
                     <div style="margin-top:14px;font-size:12px;color:#7d8e9c">
                         💡 <strong>For background alerts on phone:</strong> Browser menu → "Install app" or "Add to Home Screen"
                     </div>
+                </div>
+
+                <!-- ================= Google Sheets Live Sync ================= -->
+                <div class="card" style="grid-column: span 2">
+                    <h3>📊 Google Sheets Live Sync {('<span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981">ON</span>' if os.getenv('GOOGLE_SHEETS_WEBHOOK') else '<span class="badge" style="background:rgba(125,142,156,0.15);color:#7d8e9c">OFF</span>')}</h3>
+                    <p style="font-size:13px;color:#95a3b1;margin:0 0 10px">
+                        Auto-sync every student message to a Google Sheet for backup, sharing with team, or analytics.
+                    </p>
+                    <details style="margin-top:8px">
+                        <summary style="cursor:pointer;color:#5288c1;font-size:13px;font-weight:600;padding:6px 0">📖 Setup instructions (one-time, ~5 min)</summary>
+                        <div style="margin-top:10px;padding:14px;background:rgba(0,0,0,0.2);border-radius:10px;border:1px solid rgba(255,255,255,0.05);font-size:12px;line-height:1.6;color:#c5cdd5">
+                            <strong style="color:#fff">Step 1 — Create a Google Sheet</strong><br>
+                            Go to <a href="https://sheets.new" target="_blank" style="color:#5288c1">sheets.new</a> and create a new sheet. Add headers in row 1:<br>
+                            <code style="background:#0e1621;padding:2px 6px;border-radius:4px">Phone | Name | Role | Message | Timestamp | New Lead</code>
+                            <br><br>
+                            <strong style="color:#fff">Step 2 — Add Apps Script</strong><br>
+                            In the sheet, click <code>Extensions → Apps Script</code>. Replace all code with the script shown below, then save.
+                            <br><br>
+                            <strong style="color:#fff">Step 3 — Deploy as Web App</strong><br>
+                            In Apps Script, click <code>Deploy → New deployment → Web app</code>.<br>
+                            • Execute as: <code>Me</code><br>
+                            • Who has access: <code>Anyone</code><br>
+                            Copy the deployment URL (ends with <code>/exec</code>).
+                            <br><br>
+                            <strong style="color:#fff">Step 4 — Add to Railway</strong><br>
+                            Railway → Variables → New: <code>GOOGLE_SHEETS_WEBHOOK</code> = paste the URL.<br>
+                            Railway redeploys; sync activates instantly.
+                            <br><br>
+                            <strong style="color:#fff">Apps Script code to paste:</strong>
+                            <pre style="background:#0a1320;padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin-top:6px;color:#a5b4c4">function doPost(e) {{
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = JSON.parse(e.postData.contents);
+  var phones = sheet.getRange("A:A").getValues().map(function(r) {{ return r[0]; }});
+  var rowIdx = phones.indexOf(data.phone) + 1;
+  if (rowIdx < 2) {{
+    sheet.appendRow([data.phone, data.name, data.role, data.message, data.timestamp, data.is_new_lead ? "YES" : ""]);
+  }} else {{
+    sheet.getRange(rowIdx, 1, 1, 6).setValues([[data.phone, data.name, data.role, data.message, data.timestamp, data.is_new_lead ? "YES" : ""]]);
+  }}
+  return ContentService.createTextOutput(JSON.stringify({{status:"ok"}})).setMimeType(ContentService.MimeType.JSON);
+}}</pre>
+                        </div>
+                    </details>
                 </div>
 
                 <!-- ================= Export Data ================= -->
