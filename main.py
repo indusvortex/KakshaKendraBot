@@ -1560,8 +1560,19 @@ def _avatar_html(name: str | None, phone: str, size: int = 50) -> str:
 def _render_pending_leads_panel() -> str:
     """Renders the orange 'pending calls' panel that lives at the top of the sidebar."""
     leads = database.get_pending_lead_reminders()
+
     if not leads:
-        return ""
+        # Show empty state so admin knows the panel exists
+        return """
+        <div class="pending-panel" style="opacity:0.7">
+            <div class="pending-panel-title">
+                <span>📞 Pending Calls (0)</span>
+            </div>
+            <div style="padding:8px 4px;color:#95a3b1;font-size:12px;text-align:center">
+                No leads waiting. New students will appear here automatically.
+            </div>
+        </div>
+        """
 
     items = []
     for lead in leads[:5]:  # Show max 5 to avoid crowding
@@ -3209,6 +3220,22 @@ async def api_lead_called(
 
     print(f"[Lead] +{sender_id} marked '{status}' by {user['username']} ({user['role']})")
     return {"status": "ok", "lead": sheets_payload}
+
+
+@app.post("/admin/api/leads/test")
+def api_create_test_lead(user: dict = Depends(verify_admin)):
+    """Admin-only: creates a fake pending lead so you can test the panel + modal UI."""
+    import random
+    test_id = f"99{random.randint(100000000, 999999999)}"
+    database.add_lead_reminder(
+        sender_id=test_id,
+        naam=f"Test Student {random.randint(1, 99)}",
+        class_label=random.choice(["Class 9", "Class 10", "Class 11", "Junior"]),
+        phone="+" + test_id,
+        source=random.choice(["Meta Ad", "WhatsApp", "Referral", "Instagram"]),
+    )
+    print(f"[Test] Created fake pending lead +{test_id}")
+    return {"status": "ok", "sender_id": test_id, "message": "Refresh /admin to see it in Pending Calls panel"}
 
 
 @app.post("/admin/api/leads/{sender_id}/dismiss")
