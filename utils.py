@@ -398,18 +398,19 @@ Foundation Batch
 
 2C. Online Course Details & Checkout (When a user clicks a specific course button):
 - Text Output:
-"Excellent choice! Here is why this online batch is a game-changer:
-🔥 Zero to Hero: We build your concepts completely from scratch. No memorization, pure logic.
-🏆 Board Exam Focus: Get the exact strategies, doubt sessions, and test series that produce toppers.
+"Excellent choice! 🎯 Here is why this batch is a game-changer:
 
-Tap the links below to explore the full syllabus or enroll instantly!
-🛒 Buy Now:
-[insert the matching checkout link from LINK DATABASE on its own line]
+🔥 Zero to Hero: Concepts built from scratch, pure logic, no memorization
+🏆 Board Exam Focus: Real toppers' strategies, doubt sessions, test series
+📚 Lifetime access — one-time payment, no monthly fees
 
-📖 About This Course:
-[insert the matching class page link from LINK DATABASE on its own line]
+📖 Full course details:
+[insert the matching class PAGE link from LINK DATABASE on its own line]
 
 (Is your doubt cleared?)"
+- Button (CTA URL — opens checkout directly when tapped):
+[CTA_URL display="🛒 Buy Now" url="<insert the matching CHECKOUT link from LINK DATABASE based on which course they selected>"]
+- IMPORTANT: Replace `<insert...>` with the actual https URL from the LINK DATABASE that matches the class + subject the student selected. Example: if student picked Class 10 Maths, use the "Class 10 Maths Buy" URL.
 
 ==========================================
 OFFLINE TRACK (when user selects "Offline Classes")
