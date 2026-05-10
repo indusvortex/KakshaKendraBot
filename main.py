@@ -392,25 +392,47 @@ def _handle_team_login_logout(sender_id: str, message_text: str) -> bool:
         database.set_state("team_logout_time", datetime.now(timezone.utc).isoformat())
 
         stats = database.get_call_stats()
+
+        # Compute how long the shift was (since last login_time, if any)
+        shift_str = "—"
+        login_iso = database.get_state("team_login_time")
+        if login_iso:
+            try:
+                login_dt = datetime.fromisoformat(login_iso.replace("Z", "+00:00"))
+                worked_min = int((datetime.now(timezone.utc) - login_dt).total_seconds() / 60)
+                hrs, mins = worked_min // 60, worked_min % 60
+                shift_str = f"{hrs}h {mins}m" if hrs else f"{mins}m"
+            except Exception:
+                pass
+
+        # Team gets full performance report
         farewell = (
-            f"🔴 *Logged out at {now_ist}*\n\n"
-            f"📊 *Today's totals:*\n"
+            f"🔴 *Shift Ended* — Logged out at {now_ist}\n\n"
+            f"⏱️ *Shift duration:* {shift_str}\n\n"
+            f"📊 *Your Today's Performance:*\n"
             f"   ✅ {stats['called_today']} calls completed\n"
-            f"   📥 {stats['new_today']} new leads received\n\n"
-            f"👋 Reminders OFF for you. Type 'login' anytime to come back online.\n"
-            f"💤 Take rest, you earned it!"
+            f"   📥 {stats['new_today']} new leads received\n"
+            f"   ⏰ {stats['pending_now']} still pending (admin will handle)\n\n"
+            f"👋 Reminders OFF for you. Type 'login' anytime to resume.\n"
+            f"💤 Aaram karo — kal phir milte hain!"
         )
         send_whatsapp_message(sender_id, farewell)
 
-        # Notify admin
+        # Admin gets full shift summary too
         admin_msg = (
-            f"🔴 *Team logged out*\n"
+            f"🔴 *Team Member LOGGED OUT*\n"
             f"⏰ {now_ist}\n"
-            f"📞 +{sender_id}\n\n"
-            f"⚠️ Team reminders are now PAUSED. Admin gets all alerts directly until team logs back in."
+            f"📞 +{sender_id}\n"
+            f"⏱️ *Shift duration:* {shift_str}\n\n"
+            f"📊 *Today's Final Report:*\n"
+            f"   ✅ {stats['called_today']} calls completed by team\n"
+            f"   📥 {stats['new_today']} new leads received today\n"
+            f"   ⏰ {stats['pending_now']} leads still pending\n\n"
+            f"⚠️ 5-min reminders PAUSED. New leads still WhatsApp you (24h coverage).\n"
+            f"📊 Manage pending: https://web-production-0e9ed.up.railway.app/admin"
         )
         _whatsapp_broadcast(os.getenv("ADMIN_NOTIFY_NUMBER", ""), admin_msg, label="TeamLogout")
-        print(f"[TeamLogout] +{sender_id} logged out")
+        print(f"[TeamLogout] +{sender_id} logged out (shift: {shift_str})")
         return True
 
     return False
