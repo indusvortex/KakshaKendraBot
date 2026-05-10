@@ -370,12 +370,18 @@ def _handle_team_login_logout(sender_id: str, message_text: str) -> bool:
         )
         send_whatsapp_message(sender_id, summary)
 
-        # Notify admin
+        # Notify admin with full report
         admin_msg = (
-            f"🟢 *Team logged in*\n"
+            f"🟢 *Team Member LOGGED IN*\n"
             f"⏰ {now_ist}\n"
             f"📞 +{sender_id}\n\n"
-            f"Reminders for this team member are now ACTIVE."
+            f"📊 *Yesterday's Report:*\n"
+            f"   ✅ {stats['called_yesterday']} calls completed\n\n"
+            f"📊 *Today So Far:*\n"
+            f"   📥 {stats['new_today']} new leads received\n"
+            f"   ✅ {stats['called_today']} calls done\n"
+            f"   ⏰ {stats['pending_now']} pending right now\n\n"
+            f"🔔 Both team + admin will now get 5-min reminders for pending leads."
         )
         _whatsapp_broadcast(os.getenv("ADMIN_NOTIFY_NUMBER", ""), admin_msg, label="TeamLogin")
         print(f"[TeamLogin] +{sender_id} logged in")
@@ -536,13 +542,15 @@ async def reminder_loop():
                 age_since_last_remind = (now_utc - (last_remind or created)).total_seconds()
                 age_since_creation = (now_utc - created).total_seconds()
 
-                # 1. Every 5 minutes: push + WhatsApp ping to TEAM (only if logged in),
-                #    plus WhatsApp CC to ADMIN (always — 24h coverage)
+                # 1. Every 5 minutes: push + WhatsApp ping to BOTH team AND admin —
+                #    but ONLY when team is logged in. (When team is offline,
+                #    we don't spam admin all night — they got the initial new-lead
+                #    alert which is 24h. The 5-min cycle is a "team is supposed
+                #    to be working" signal.)
                 if last_remind is None or age_since_last_remind >= REMINDER_INTERVAL_SECONDS:
-                    mins_waiting = int(age_since_creation / 60)
-                    team_active = _is_team_active()
+                    if _is_team_active():
+                        mins_waiting = int(age_since_creation / 60)
 
-                    if team_active:
                         # Web push to team browsers (real-time)
                         send_web_push(
                             title="📞 Reminder — call this lead!",
@@ -554,11 +562,12 @@ async def reminder_loop():
                         # WhatsApp reminder to TEAM ("have you called yet?")
                         _notify_team_lead_pending(sender_id, naam, class_label, mins_waiting)
 
-                    # WhatsApp CC to ADMIN — ALWAYS fires, even when team is logged out.
-                    # If team is offline, admin gets a stronger phrasing so they know to step in.
-                    _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
+                        # WhatsApp CC to ADMIN (only fires while team is logged in)
+                        _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
 
-                    database.mark_lead_reminded(sender_id)
+                        database.mark_lead_reminded(sender_id)
+                    # If team is logged out: skip 5-min reminders entirely.
+                    # Admin already got the initial new-lead WhatsApp (24h coverage).
 
                 # 2. Escalate to admin if not handled in 2 minutes
                 if admin_notified is None and age_since_creation >= ESCALATE_AFTER_SECONDS:
