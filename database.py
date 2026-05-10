@@ -63,7 +63,80 @@ def init_db():
                 called_at          DATETIME
             )
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS app_state (
+                key        TEXT PRIMARY KEY,
+                value      TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         conn.commit()
+
+
+# ============================================================
+# Generic key/value app state — used for team login/logout, etc.
+# ============================================================
+
+def set_state(key: str, value: str):
+    """Persists a key/value pair."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            '''
+            INSERT INTO app_state (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value=excluded.value,
+                updated_at=CURRENT_TIMESTAMP
+            ''',
+            (key, value),
+        )
+        conn.commit()
+
+
+def get_state(key: str, default: str | None = None) -> str | None:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT value FROM app_state WHERE key = ?", (key,)
+        ).fetchone()
+    return row[0] if row else default
+
+
+def get_call_stats() -> Dict:
+    """Returns counts for the team summary: calls yesterday/today + pending."""
+    with sqlite3.connect(DB_PATH) as conn:
+        called_yesterday = conn.execute(
+            """
+            SELECT COUNT(*) FROM lead_reminders
+            WHERE status = 'called'
+            AND date(called_at) = date('now', '-1 day')
+            """
+        ).fetchone()[0]
+
+        called_today = conn.execute(
+            """
+            SELECT COUNT(*) FROM lead_reminders
+            WHERE status = 'called'
+            AND date(called_at) = date('now')
+            """
+        ).fetchone()[0]
+
+        pending_now = conn.execute(
+            "SELECT COUNT(*) FROM lead_reminders WHERE status = 'pending'"
+        ).fetchone()[0]
+
+        new_today = conn.execute(
+            """
+            SELECT COUNT(*) FROM lead_reminders
+            WHERE date(created_at) = date('now')
+            """
+        ).fetchone()[0]
+
+    return {
+        "called_yesterday": called_yesterday,
+        "called_today": called_today,
+        "pending_now": pending_now,
+        "new_today": new_today,
+    }
 
 
 def add_push_subscription(endpoint: str, p256dh: str, auth: str, role: str = "super_admin"):

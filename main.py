@@ -331,6 +331,91 @@ def _notify_admin_lead_pending(sender_id: str, name: str, class_label: str, mins
     _whatsapp_broadcast(admin_numbers, notification, label="Admin-Reminder")
 
 
+def _is_team_phone(sender_id: str) -> bool:
+    """Returns True if the WhatsApp sender_id matches a configured team number."""
+    nums_raw = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
+    if not nums_raw:
+        return False
+    nums = [n.strip().lstrip("+") for n in nums_raw.split(",") if n.strip()]
+    return sender_id.lstrip("+") in nums
+
+
+def _handle_team_login_logout(sender_id: str, message_text: str) -> bool:
+    """
+    Detects 'login' / 'logout' commands from team members and updates state.
+    Returns True if the message was handled (skip normal AI flow).
+    """
+    if not _is_team_phone(sender_id):
+        return False
+
+    cmd = message_text.strip().lower()
+    now_ist = datetime.now(IST).strftime("%I:%M %p IST · %d %b %Y")
+
+    if cmd in {"login", "log in", "log-in", "in", "start"}:
+        database.set_state("team_logged_in", "yes")
+        database.set_state("team_login_time", datetime.now(timezone.utc).isoformat())
+
+        # Send team a summary of yesterday + today
+        stats = database.get_call_stats()
+        summary = (
+            f"🟢 *Welcome back!* Login successful at {now_ist}\n\n"
+            f"📊 *Yesterday's recap:*\n"
+            f"   ✅ {stats['called_yesterday']} calls completed\n\n"
+            f"📊 *Today so far:*\n"
+            f"   📥 {stats['new_today']} new leads arrived\n"
+            f"   ✅ {stats['called_today']} calls done\n"
+            f"   ⏰ {stats['pending_now']} pending — call them now!\n\n"
+            f"💪 Reminders ON. Open dashboard:\n"
+            f"https://web-production-0e9ed.up.railway.app/admin"
+        )
+        send_whatsapp_message(sender_id, summary)
+
+        # Notify admin
+        admin_msg = (
+            f"🟢 *Team logged in*\n"
+            f"⏰ {now_ist}\n"
+            f"📞 +{sender_id}\n\n"
+            f"Reminders for this team member are now ACTIVE."
+        )
+        _whatsapp_broadcast(os.getenv("ADMIN_NOTIFY_NUMBER", ""), admin_msg, label="TeamLogin")
+        print(f"[TeamLogin] +{sender_id} logged in")
+        return True
+
+    if cmd in {"logout", "log out", "log-out", "out", "stop", "off", "bye"}:
+        database.set_state("team_logged_in", "no")
+        database.set_state("team_logout_time", datetime.now(timezone.utc).isoformat())
+
+        stats = database.get_call_stats()
+        farewell = (
+            f"🔴 *Logged out at {now_ist}*\n\n"
+            f"📊 *Today's totals:*\n"
+            f"   ✅ {stats['called_today']} calls completed\n"
+            f"   📥 {stats['new_today']} new leads received\n\n"
+            f"👋 Reminders OFF for you. Type 'login' anytime to come back online.\n"
+            f"💤 Take rest, you earned it!"
+        )
+        send_whatsapp_message(sender_id, farewell)
+
+        # Notify admin
+        admin_msg = (
+            f"🔴 *Team logged out*\n"
+            f"⏰ {now_ist}\n"
+            f"📞 +{sender_id}\n\n"
+            f"⚠️ Team reminders are now PAUSED. Admin gets all alerts directly until team logs back in."
+        )
+        _whatsapp_broadcast(os.getenv("ADMIN_NOTIFY_NUMBER", ""), admin_msg, label="TeamLogout")
+        print(f"[TeamLogout] +{sender_id} logged out")
+        return True
+
+    return False
+
+
+def _is_team_active() -> bool:
+    """Returns True if the team is currently logged in (default: True if never set)."""
+    state = database.get_state("team_logged_in", "yes")
+    return state == "yes"
+
+
 def _notify_team_lead_pending(sender_id: str, name: str, class_label: str, mins_waiting: int):
     """
     Sends a WhatsApp 'have you called?' reminder to TEAM numbers every 5 minutes
@@ -451,21 +536,26 @@ async def reminder_loop():
                 age_since_last_remind = (now_utc - (last_remind or created)).total_seconds()
                 age_since_creation = (now_utc - created).total_seconds()
 
-                # 1. Every 5 minutes: push + WhatsApp ping to TEAM, plus WhatsApp CC to ADMIN
+                # 1. Every 5 minutes: push + WhatsApp ping to TEAM (only if logged in),
+                #    plus WhatsApp CC to ADMIN (always — 24h coverage)
                 if last_remind is None or age_since_last_remind >= REMINDER_INTERVAL_SECONDS:
                     mins_waiting = int(age_since_creation / 60)
+                    team_active = _is_team_active()
 
-                    # Web push to team browsers (real-time)
-                    send_web_push(
-                        title="📞 Reminder — call this lead!",
-                        body=f"{naam} ({class_label or 'class TBD'}) — still pending",
-                        url=f"/admin?chat={sender_id}",
-                        tag=f"remind-{sender_id}",
-                        role="team",
-                    )
-                    # WhatsApp reminder to TEAM ("have you called yet?")
-                    _notify_team_lead_pending(sender_id, naam, class_label, mins_waiting)
-                    # WhatsApp CC to ADMIN ("team hasn't acted")
+                    if team_active:
+                        # Web push to team browsers (real-time)
+                        send_web_push(
+                            title="📞 Reminder — call this lead!",
+                            body=f"{naam} ({class_label or 'class TBD'}) — still pending",
+                            url=f"/admin?chat={sender_id}",
+                            tag=f"remind-{sender_id}",
+                            role="team",
+                        )
+                        # WhatsApp reminder to TEAM ("have you called yet?")
+                        _notify_team_lead_pending(sender_id, naam, class_label, mins_waiting)
+
+                    # WhatsApp CC to ADMIN — ALWAYS fires, even when team is logged out.
+                    # If team is offline, admin gets a stronger phrasing so they know to step in.
                     _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
 
                     database.mark_lead_reminded(sender_id)
@@ -598,6 +688,10 @@ async def handle_whatsapp_message(request: Request):
 
                             print(f"Received message from {sender_id}: {message_text}")
 
+                            # ----- Team check-in/check-out command intercept -----
+                            if _handle_team_login_logout(sender_id, message_text):
+                                continue  # Skip normal AI flow — handled
+
                             # ----- Special intercept: "Call Us" button tap -----
                             # WhatsApp's reply buttons can't open the dialer directly,
                             # so when the student clicks "Call Us", we send the
@@ -636,21 +730,31 @@ async def handle_whatsapp_message(request: Request):
                                     source=detected_source,
                                 )
 
-                                # WhatsApp notification: TEAM gets the lead, ADMIN gets a CC
-                                _notify_team_of_new_lead(
-                                    sender_id, contact_name, message_text,
-                                    class_label=detected_class, source=detected_source,
-                                )
+                                # ADMIN always gets the WhatsApp CC (24h coverage).
+                                # TEAM only gets notified if they are logged in.
                                 _notify_admin_of_new_student(sender_id, contact_name, message_text)
 
-                                # Web push to TEAM browsers (they handle calling)
-                                send_web_push(
-                                    title="🔔 New Lead — Call required!",
-                                    body=f"{contact_name or '+' + sender_id} ({detected_class or 'class TBD'}): {message_text[:60]}",
-                                    url=f"/admin?chat={sender_id}",
-                                    tag=f"new-{sender_id}",
-                                    role="team",
-                                )
+                                if _is_team_active():
+                                    _notify_team_of_new_lead(
+                                        sender_id, contact_name, message_text,
+                                        class_label=detected_class, source=detected_source,
+                                    )
+                                    send_web_push(
+                                        title="🔔 New Lead — Call required!",
+                                        body=f"{contact_name or '+' + sender_id} ({detected_class or 'class TBD'}): {message_text[:60]}",
+                                        url=f"/admin?chat={sender_id}",
+                                        tag=f"new-{sender_id}",
+                                        role="team",
+                                    )
+                                else:
+                                    # Team is offline — escalate immediately to admin via push
+                                    send_web_push(
+                                        title="🚨 New Lead (Team OFFLINE!)",
+                                        body=f"{contact_name or '+' + sender_id} ({detected_class or 'class TBD'}) — team is logged out, you handle this!",
+                                        url=f"/admin?chat={sender_id}",
+                                        tag=f"new-offline-{sender_id}",
+                                        role="super_admin",
+                                    )
 
                                 # Sync new lead to Google Sheets
                                 _sync_to_google_sheets(
@@ -2691,42 +2795,30 @@ def admin_settings(user: str = Depends(verify_admin)):
                             </ul>
                             <br>
                             <strong style="color:#fff">Apps Script code (copy and paste):</strong>
+                            <p style="margin:6px 0;color:#10b981">✨ This version also creates Google Calendar reminders when 'Next Call' is filled — the team phone (logged into the same Google account) gets a popup at the scheduled time.</p>
                             <pre style="background:#0a1320;padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin-top:6px;color:#a5b4c4">// Cols: A=Naam B=Class C=Phone D=Source E=Status F=Next Call G=Notes
 function doPost(e) {{
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var d = JSON.parse(e.postData.contents);
 
-  // Normalize phone (strip +, spaces, etc.) so matching works even if
-  // Google Sheets auto-converted '+919...' to a number
-  var normalize = function(p) {{
-    return String(p || "").replace(/[^0-9]/g, "");
-  }};
+  var normalize = function(p) {{ return String(p || "").replace(/[^0-9]/g, ""); }};
   var inbound = normalize(d.phone);
 
   var lastRow = sheet.getLastRow();
   var phones = lastRow >= 2
-    ? sheet.getRange(2, 3, lastRow - 1, 1).getValues().map(function(r) {{
-        return normalize(r[0]);
-      }})
+    ? sheet.getRange(2, 3, lastRow - 1, 1).getValues().map(function(r) {{ return normalize(r[0]); }})
     : [];
   var rowIdx = phones.indexOf(inbound);
 
   if (rowIdx === -1) {{
-    // New lead — write all fields
     sheet.appendRow([
-      d.naam || "",
-      d.class || "",
-      "+" + inbound,
-      d.source || "WhatsApp",
-      d.status || "New",
-      d.next_call || "",
-      d.notes || ""
+      d.naam || "", d.class || "", "+" + inbound,
+      d.source || "WhatsApp", d.status || "New",
+      d.next_call || "", d.notes || ""
     ]);
-    // Force phone column to be text — prevents Google from stripping the +
     var newRow = sheet.getLastRow();
     sheet.getRange(newRow, 3).setNumberFormat("@").setValue("+" + inbound);
   }} else {{
-    // Existing lead — update fields ONLY when bot sends a non-empty value
     var sheetRow = rowIdx + 2;
     if (d.naam)      sheet.getRange(sheetRow, 1).setValue(d.naam);
     if (d.class)     sheet.getRange(sheetRow, 2).setValue(d.class);
@@ -2737,9 +2829,77 @@ function doPost(e) {{
     if (d.notes)     sheet.getRange(sheetRow, 7).setValue(d.notes);
   }}
 
-  return ContentService
-    .createTextOutput(JSON.stringify({{ok: true}}))
-    .setMimeType(ContentService.MimeType.JSON);
+  // Auto-create a Calendar reminder if Next Call has a parseable time
+  if (d.next_call) {{
+    try {{ createLeadCallReminder(d, inbound); }} catch (err) {{ Logger.log(err); }}
+  }}
+
+  return ContentService.createTextOutput(JSON.stringify({{ok: true}})).setMimeType(ContentService.MimeType.JSON);
+}}
+
+function parseNextCallTime(text) {{
+  if (!text) return null;
+  text = String(text).toLowerCase().trim();
+  var now = new Date();
+  var d = new Date(now.getTime());
+
+  // Day modifiers
+  if (text.indexOf("parso") !== -1 || text.indexOf("day after") !== -1) {{
+    d.setDate(d.getDate() + 2);
+  }} else if (text.indexOf("kal") !== -1 || text.indexOf("tomorrow") !== -1) {{
+    d.setDate(d.getDate() + 1);
+  }} else if (text.indexOf("aaj") !== -1 || text.indexOf("today") !== -1) {{
+    /* today */
+  }}
+
+  // Time match: 5pm / 5 PM / 5:30 pm / 17:00 / 5
+  var m = text.match(/(\\d{{1,2}})(?:[:.](\\d{{2}}))?\\s*(am|pm)?/);
+  if (!m) {{ d.setHours(12, 0, 0, 0); return d; }}
+  var h = parseInt(m[1], 10);
+  var mm = parseInt(m[2] || "0", 10);
+  var ampm = m[3];
+  if (ampm === "pm" && h < 12) h += 12;
+  if (ampm === "am" && h === 12) h = 0;
+  // If no am/pm and hour <= 7, default to PM (afternoon callback is more common)
+  if (!ampm && h >= 1 && h <= 7) h += 12;
+
+  d.setHours(h, mm, 0, 0);
+  // If the time is in the past (today already passed), bump to tomorrow
+  if (d.getTime() < now.getTime()) d.setDate(d.getDate() + 1);
+  return d;
+}}
+
+function createLeadCallReminder(d, inbound) {{
+  var when = parseNextCallTime(d.next_call);
+  if (!when) return;
+  var cal = CalendarApp.getDefaultCalendar();
+  var tagPhone = "[" + inbound + "]";
+  var title = "📞 Call " + (d.naam || "Lead") + " — " + (d.class || "") + " " + tagPhone;
+  var desc = [
+    "Phone: +" + inbound,
+    "Class: " + (d.class || ""),
+    "Source: " + (d.source || ""),
+    "Status: " + (d.status || ""),
+    "Notes: " + (d.notes || "")
+  ].join("\\n");
+
+  // Delete any prior calendar event for this lead so we don't pile up duplicates
+  var search = cal.getEventsForDay(when, {{search: tagPhone}});
+  for (var i = 0; i < search.length; i++) search[i].deleteEvent();
+
+  // Also clean tomorrow & day-after just in case the date was bumped
+  var ahead = new Date(when.getTime() + 86400000);
+  var ahead2 = new Date(when.getTime() + 2 * 86400000);
+  var s1 = cal.getEventsForDay(ahead, {{search: tagPhone}});
+  for (var j = 0; j < s1.length; j++) s1[j].deleteEvent();
+  var s2 = cal.getEventsForDay(ahead2, {{search: tagPhone}});
+  for (var k = 0; k < s2.length; k++) s2[k].deleteEvent();
+
+  var endTime = new Date(when.getTime() + 30 * 60 * 1000);
+  var event = cal.createEvent(title, when, endTime, {{description: desc, location: "WhatsApp"}});
+  event.removeAllReminders();
+  event.addPopupReminder(0);   // at the time of call
+  event.addPopupReminder(15);  // 15 min before
 }}</pre>
                         </div>
                     </details>
