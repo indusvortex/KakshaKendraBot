@@ -49,20 +49,31 @@ def init_db():
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS lead_reminders (
-                sender_id          TEXT PRIMARY KEY,
-                status             TEXT DEFAULT 'pending',
-                naam               TEXT,
-                class_label        TEXT,
-                phone              TEXT,
-                source             TEXT,
-                next_call          TEXT,
-                notes              TEXT,
-                created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
-                last_reminded_at   DATETIME,
-                admin_notified_at  DATETIME,
-                called_at          DATETIME
+                sender_id              TEXT PRIMARY KEY,
+                status                 TEXT DEFAULT 'pending',
+                naam                   TEXT,
+                class_label            TEXT,
+                phone                  TEXT,
+                source                 TEXT,
+                next_call              TEXT,
+                notes                  TEXT,
+                created_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_reminded_at       DATETIME,
+                admin_notified_at      DATETIME,
+                called_at              DATETIME,
+                pre_call_reminded_at   DATETIME,
+                scheduled_call_at      DATETIME
             )
         ''')
+        # Backwards-compat: add the two new columns if upgrading from older schema
+        for col_def in (
+            "ALTER TABLE lead_reminders ADD COLUMN pre_call_reminded_at DATETIME",
+            "ALTER TABLE lead_reminders ADD COLUMN scheduled_call_at DATETIME",
+        ):
+            try:
+                conn.execute(col_def)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.execute('''
             CREATE TABLE IF NOT EXISTS app_state (
                 key        TEXT PRIMARY KEY,
@@ -341,6 +352,56 @@ def get_lead_reminder(sender_id: str) -> Dict | None:
             (sender_id,),
         ).fetchone()
     return dict(row) if row else None
+
+
+def set_scheduled_call(sender_id: str, scheduled_utc: str | None):
+    """
+    Stores the parsed UTC datetime (as ISO string) for the scheduled callback,
+    and resets pre_call_reminded_at so we re-arm the 15-min-before reminder.
+    Pass None to clear any existing schedule.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            UPDATE lead_reminders
+            SET scheduled_call_at    = ?,
+                pre_call_reminded_at = NULL
+            WHERE sender_id = ?
+            """,
+            (scheduled_utc, sender_id),
+        )
+        conn.commit()
+
+
+def get_upcoming_calls_to_remind(window_minutes: int = 16) -> List[Dict]:
+    """
+    Returns leads whose scheduled call is happening within the next `window_minutes`
+    AND that have not yet been pre-reminded. Used to fire the 15-min-before ping.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT sender_id, naam, class_label, phone, next_call, scheduled_call_at
+            FROM lead_reminders
+            WHERE scheduled_call_at IS NOT NULL
+              AND pre_call_reminded_at IS NULL
+              AND scheduled_call_at <= datetime('now', '+' || ? || ' minutes')
+              AND scheduled_call_at >= datetime('now', '-2 minutes')
+            """,
+            (window_minutes,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_pre_call_reminded(sender_id: str):
+    """Marks that the 15-min-before WhatsApp has been sent — prevents re-sending."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE lead_reminders SET pre_call_reminded_at = CURRENT_TIMESTAMP WHERE sender_id = ?",
+            (sender_id,),
+        )
+        conn.commit()
 
 
 def upsert_contact(sender_id: str, display_name: str | None):

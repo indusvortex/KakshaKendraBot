@@ -331,6 +331,77 @@ def _notify_admin_lead_pending(sender_id: str, name: str, class_label: str, mins
     _whatsapp_broadcast(admin_numbers, notification, label="Admin-Reminder")
 
 
+def _parse_next_call_to_utc(text: str) -> str | None:
+    """
+    Parses text like 'Today 4 PM', 'Kal 5 PM', 'Aaj 6 pm', '17:30',
+    'Tomorrow 10 am' into a UTC ISO timestamp string suitable for SQLite.
+    Returns None if no time can be extracted.
+    """
+    if not text:
+        return None
+    import re
+    s = text.lower().strip()
+
+    # Day modifier
+    days_offset = 0
+    if "parso" in s or "day after" in s:
+        days_offset = 2
+    elif "kal" in s or "tomorrow" in s:
+        days_offset = 1
+    # else assume today
+
+    # Time match: 4pm / 4 PM / 4:30 pm / 17:00 / 4 / 4.30 pm
+    m = re.search(r"(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?", s)
+    if not m:
+        return None
+
+    h = int(m.group(1))
+    mins = int(m.group(2) or 0)
+    ampm = (m.group(3) or "").replace(".", "").strip()
+
+    if ampm == "pm" and h < 12:
+        h += 12
+    elif ampm == "am" and h == 12:
+        h = 0
+    elif not ampm and 1 <= h <= 7:
+        # Heuristic: no am/pm + small hour -> probably PM (callback times)
+        h += 12
+
+    if not (0 <= h <= 23 and 0 <= mins <= 59):
+        return None
+
+    now_ist = datetime.now(IST)
+    base = now_ist.replace(hour=h, minute=mins, second=0, microsecond=0)
+    target = base + timedelta(days=days_offset)
+    # If past time today (and no day modifier), bump to tomorrow
+    if days_offset == 0 and target < now_ist:
+        target += timedelta(days=1)
+
+    return target.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _notify_team_pre_call(sender_id: str, naam: str, class_label: str, time_str: str):
+    """
+    Sends a 15-min-before WhatsApp reminder to TEAM ONLY (not admin).
+    Fired by the reminder loop when a lead's scheduled_call_at is approaching.
+    """
+    team_numbers = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
+    if not team_numbers:
+        return
+    notification = (
+        f"⏰ *15 min reminder!*\n"
+        f"\n"
+        f"📞 You have to call this lead at *{time_str}*:\n"
+        f"\n"
+        f"👤 *Name:* {naam}\n"
+        f"🎓 *Class:* {class_label or 'TBD'}\n"
+        f"📱 *Number:* +{sender_id}\n"
+        f"\n"
+        f"Get ready — call them on time!"
+    )
+    _whatsapp_broadcast(team_numbers, notification, label="Pre-Call")
+
+
 def _is_team_phone(sender_id: str) -> bool:
     """Returns True if the WhatsApp sender_id matches a configured team number."""
     nums_raw = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
@@ -551,6 +622,28 @@ async def reminder_loop():
 
     while True:
         try:
+            # === A. Pre-call reminders (15 min before scheduled callback) ===
+            # Fires WhatsApp to TEAM only when their saved next_call time is within
+            # the next 16 minutes and they haven't been pre-reminded yet.
+            if _is_team_active():
+                for lead in database.get_upcoming_calls_to_remind(window_minutes=16):
+                    try:
+                        sched_iso = lead.get("scheduled_call_at")
+                        sched_dt = datetime.strptime(sched_iso, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                        sched_ist = sched_dt.astimezone(IST).strftime("%I:%M %p")
+                    except Exception:
+                        sched_ist = lead.get("next_call") or "soon"
+
+                    _notify_team_pre_call(
+                        sender_id=lead["sender_id"],
+                        naam=lead.get("naam") or "Lead",
+                        class_label=lead.get("class_label") or "",
+                        time_str=sched_ist,
+                    )
+                    database.mark_pre_call_reminded(lead["sender_id"])
+                    print(f"[Pre-Call] Reminded team about +{lead['sender_id']} (call at {sched_ist} IST)")
+
+            # === B. Standard pending-lead reminders (5-min cycle) ===
             pending = database.get_pending_lead_reminders()
             now_utc = datetime.now(timezone.utc)
             for lead in pending:
@@ -3416,6 +3509,19 @@ async def api_lead_called(
         notes=notes,
         status=status,
     )
+
+    # Parse next_call into a real UTC datetime and store it so the reminder
+    # loop can ping the team 15 minutes before. Clearing also re-arms the alert.
+    if next_call:
+        parsed_utc = _parse_next_call_to_utc(next_call)
+        database.set_scheduled_call(sender_id, parsed_utc)
+        if parsed_utc:
+            print(f"[Schedule] +{sender_id} next call set: '{next_call}' -> {parsed_utc} UTC")
+        else:
+            print(f"[Schedule] +{sender_id} next_call '{next_call}' could not be parsed; no pre-call reminder will fire")
+    else:
+        # Explicitly cleared
+        database.set_scheduled_call(sender_id, None)
 
     # Push the updated lead to Google Sheet so the CRM stays in sync
     sheets_payload = database.get_lead_reminder(sender_id)
