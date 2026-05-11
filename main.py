@@ -352,13 +352,25 @@ def _handle_team_login_logout(sender_id: str, message_text: str) -> bool:
     now_ist = datetime.now(IST).strftime("%I:%M %p IST · %d %b %Y")
 
     if cmd in {"login", "log in", "log-in", "in", "start"}:
+        # Read previous logout time BEFORE we overwrite state, so we can count
+        # how many leads arrived while team was away
+        prev_logout_iso = database.get_state("team_logout_time")
+        leads_while_away = database.count_leads_since(prev_logout_iso)
+
         database.set_state("team_logged_in", "yes")
         database.set_state("team_login_time", datetime.now(timezone.utc).isoformat())
 
         # Send team a summary of yesterday + today
         stats = database.get_call_stats()
+
+        # Build the "while you were away" line only if there's a previous logout
+        away_line = ""
+        if prev_logout_iso:
+            away_line = f"🆕 *{leads_while_away} new leads arrived since your last logout!*\n\n"
+
         summary = (
             f"🟢 *Welcome back!* Login successful at {now_ist}\n\n"
+            f"{away_line}"
             f"📊 *Yesterday's recap:*\n"
             f"   ✅ {stats['called_yesterday']} calls completed\n\n"
             f"📊 *Today so far:*\n"

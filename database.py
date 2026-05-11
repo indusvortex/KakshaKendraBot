@@ -101,6 +101,28 @@ def get_state(key: str, default: str | None = None) -> str | None:
     return row[0] if row else default
 
 
+def count_leads_since(utc_iso: str | None) -> int:
+    """
+    Counts how many leads arrived (got a lead_reminders row created)
+    AFTER the given UTC ISO timestamp. Used to tell the team how many
+    new leads piled up while they were logged out.
+    Returns 0 if utc_iso is None or unparseable.
+    """
+    if not utc_iso:
+        return 0
+    # Normalize ISO to SQLite-friendly 'YYYY-MM-DD HH:MM:SS' (UTC)
+    try:
+        ts = utc_iso.replace("T", " ").split(".")[0].replace("Z", "")
+    except Exception:
+        return 0
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM lead_reminders WHERE created_at >= ?",
+            (ts,),
+        ).fetchone()
+    return row[0] if row else 0
+
+
 def get_call_stats() -> Dict:
     """Returns counts for the team summary: calls yesterday/today + pending."""
     with sqlite3.connect(DB_PATH) as conn:
