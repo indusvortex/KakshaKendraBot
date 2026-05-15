@@ -297,11 +297,11 @@ Class 12
 
 2B. Online Course Menu (Dynamic based on the Class selected):
 
-If Class 9 or 10 is selected:
-- Text: "Sahi class! 🔥 Ab subject choose karo:
-📐 Maths | 🔬 Science | 🎯 Dual (Most Popular!)
-Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨
-Kya pasand hai? 👇"
+If Class 9 is selected:
+- Text: "🔥 Class 9 is Not a \"Rest Year\" — It's the \"Game Changer\"!
+80% of students struggle in Class 10 because they wasted Class 9. Don't be one of them.
+
+Ab subject choose karo 👇"
 - Buttons:
 [OPTIONS]
 Maths
@@ -309,9 +309,32 @@ Science
 Maths + Science
 [/OPTIONS]
 
-If Class 11 or 12 is selected:
-- Text: "Final Year! 🎯 Boards + Entrance ek saath crack!
-Yahan Ratta Nahi, Strategy Sikhaya Jata Hai! ✨
+If Class 10 is selected:
+- Text: "🏆 The Marksheet That Stays With You Forever. \"Make It Proud\".
+Don't gamble with your Board Exams. Get the structured guidance you need to cross 95%.
+
+Ab subject choose karo 👇"
+- Buttons:
+[OPTIONS]
+Maths
+Science
+Maths + Science
+[/OPTIONS]
+
+If Class 11 is selected:
+- Text: "🎯 Class 11 Maths is not a \"Chapter\" — It's the \"Turning Point\".
+Maths Ko \"Ratta\" Nahi, \"Feel\" Karo. Formulas bhool jaoge, par Logic hamesha yaad rahega.
+
+Ready? 👇"
+- Buttons:
+[OPTIONS]
+Maths
+[/OPTIONS]
+
+If Class 12 is selected:
+- Text: "🏆 The Marksheet That Stays With You Forever. \"Make It Proud\".
+Don't gamble with your Board Exams. Get the structured guidance you need to cross 95%.
+
 Ready? 👇"
 - Buttons:
 [OPTIONS]
@@ -319,9 +342,9 @@ Maths
 [/OPTIONS]
 
 If Class 6-8 is selected:
-- Text: "Bachpan se Champion! 🌱
-Foundation Strong = Future Bright!
-Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨
+- Text: "🌱 Junior classes are not \"Small Steps\" — they are the base of \"Big Results\".
+\"Strong foundations built early decide how far a student can go later.\"
+
 Aage badhe? 👇"
 - Buttons:
 [OPTIONS]
@@ -395,9 +418,8 @@ Sr. Secondary (11-12)
 3B. Offline Level Details (Dynamic based on the level selected — match by the class range in brackets):
 
 If user selects "Pre-Primary (Nur-UKG)":
-- Text: "🌱 Pre-Primary Champions Lab!
-Play se Learning, Future Leaders!
-Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨
+- Text: "🍎 \"Ab 'A for Apple' ratna nahi, Smart Class mein samajhna hai! ✨\"
+
 📍 Kanth, UP. Aage badhe? 👇"
 - Buttons:
 [OPTIONS]
@@ -406,9 +428,8 @@ Call Us
 [/OPTIONS]
 
 If user selects "Primary (1st-5th)":
-- Text: "📚 Primary Champions!
-Concept First, No Ratta — Topper Yahin Se Bante Hain!
-Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨
+- Text: "🎒 \"Bhari school bags se nahi, ab 'Smart Concepts' se aage badhega aapka baccha! 💻\"
+
 📍 Kanth, UP. Next? 👇"
 - Buttons:
 [OPTIONS]
@@ -417,9 +438,9 @@ Call Us
 [/OPTIONS]
 
 If user selects "Junior (6th-8th)":
-- Text: "🎯 Junior Champions Track!
-Boards Ki Perfect Tayyari — Rajat Sir's Signature Drill!
-Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨
+- Text: "🌱 Junior classes are not \"Small Steps\" — they are the base of \"Big Results\".
+\"Strong foundations built early decide how far a student can go later.\"
+
 📍 Kanth, UP. Aage? 👇"
 - Buttons:
 [OPTIONS]
@@ -428,10 +449,11 @@ Call Us
 [/OPTIONS]
 
 If user selects "Secondary (9th-10th)":
-- Text: "🏆 Secondary Champions!
-Yahan Se Toppers Banate Hain!
-Oral → Written → Rajat Sir's Personal Check ✨
-Yahan Ratta Nahi, Logic Sikhaya Jata Hai!
+- Text: "🏆 The Marksheet That Stays With You Forever. \"Make It Proud\".
+Don't gamble with your Board Exams. Get the structured guidance you need to cross 95%.
+
+(Class 9 mein ho? Yeh \"Game Changer\" year hai — 80% Class 10 strugglers ne 9th waste kiya tha.)
+
 📍 Kanth, UP. Ready? 👇"
 - Buttons:
 [OPTIONS]
@@ -440,9 +462,11 @@ Call Us
 [/OPTIONS]
 
 If user selects "Sr. Secondary (11-12)":
-- Text: "🎓 Senior Champions Track!
-Boards 95%+ + JEE/NEET Ek Saath!
-Yahan Ratta Nahi, Strategy Sikhaya Jata Hai! ✨
+- Text: "🎯 Class 11 Maths is not a \"Chapter\" — It's the \"Turning Point\".
+Maths Ko \"Ratta\" Nahi, \"Feel\" Karo. Formulas bhool jaoge, par Logic hamesha yaad rahega.
+
+(Class 12 mein ho? The Marksheet That Stays With You Forever. \"Make It Proud\".)
+
 📍 Kanth, UP. Aage badhe? 👇"
 - Buttons:
 [OPTIONS]
