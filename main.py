@@ -2438,6 +2438,8 @@ def admin_dashboard(
                 document.getElementById('cm-naam').value = naam || '';
                 document.getElementById('cm-class').value = classLabel || '';
                 document.getElementById('cm-phone').value = phone || '';
+                document.getElementById('cm-source').value = '';
+                document.getElementById('cm-type').value = 'Online';
                 document.getElementById('cm-status').value = 'Interested';
                 document.getElementById('cm-next').value = '';
                 document.getElementById('cm-notes').value = '';
@@ -2455,6 +2457,8 @@ def admin_dashboard(
                     naam:      document.getElementById('cm-naam').value.trim(),
                     class:     document.getElementById('cm-class').value.trim(),
                     phone:     document.getElementById('cm-phone').value.trim(),
+                    source:    document.getElementById('cm-source').value.trim(),
+                    lead_type: document.getElementById('cm-type').value.trim(),
                     status:    document.getElementById('cm-status').value.trim(),
                     next_call: document.getElementById('cm-next').value.trim(),
                     notes:     document.getElementById('cm-notes').value.trim(),
@@ -2512,6 +2516,15 @@ def admin_dashboard(
 
                 <label>Phone</label>
                 <input type="text" id="cm-phone" placeholder="+91..." />
+
+                <label>From (Source)</label>
+                <input type="text" id="cm-source" placeholder="E.g. Instagram, Poster, Referral" />
+
+                <label>Lead Type</label>
+                <select id="cm-type">
+                    <option>Online</option>
+                    <option>Offline</option>
+                </select>
 
                 <label>Status *</label>
                 <select id="cm-status">
@@ -3662,12 +3675,16 @@ async def api_lead_called(
     status = pick(3, "status") or "called"
     next_call = pick(4, "next_call")
     notes = pick(5, "notes")
+    source = body.get("source")
+    lead_type = body.get("lead_type")
 
     database.mark_lead_called(
         sender_id=sender_id,
         naam=naam,
         class_label=class_label,
         phone=phone,
+        source=source,
+        lead_type=lead_type,
         next_call=next_call,
         notes=notes,
         status=status,
@@ -3698,6 +3715,7 @@ async def api_lead_called(
                     "naam": sheets_payload.get("naam") or "",
                     "class": sheets_payload.get("class_label") or "",
                     "source": sheets_payload.get("source") or "",
+                    "lead_type": sheets_payload.get("lead_type") or "Online",
                     "status": sheets_payload.get("status") or "called",
                     "next_call": sheets_payload.get("next_call") or "",
                     "notes": sheets_payload.get("notes") or "",

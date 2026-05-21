@@ -55,6 +55,7 @@ def init_db():
                 class_label            TEXT,
                 phone                  TEXT,
                 source                 TEXT,
+                lead_type              TEXT,
                 next_call              TEXT,
                 notes                  TEXT,
                 created_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -69,6 +70,7 @@ def init_db():
         for col_def in (
             "ALTER TABLE lead_reminders ADD COLUMN pre_call_reminded_at DATETIME",
             "ALTER TABLE lead_reminders ADD COLUMN scheduled_call_at DATETIME",
+            "ALTER TABLE lead_reminders ADD COLUMN lead_type TEXT",
         ):
             try:
                 conn.execute(col_def)
@@ -320,6 +322,8 @@ def mark_lead_called(
     naam: str | None = None,
     class_label: str | None = None,
     phone: str | None = None,
+    source: str | None = None,
+    lead_type: str | None = None,
     next_call: str | None = None,
     notes: str | None = None,
     status: str = "called",
@@ -333,12 +337,14 @@ def mark_lead_called(
                 naam = COALESCE(?, naam),
                 class_label = COALESCE(?, class_label),
                 phone = COALESCE(?, phone),
+                source = COALESCE(?, source),
+                lead_type = COALESCE(?, lead_type),
                 next_call = COALESCE(?, next_call),
                 notes = COALESCE(?, notes),
                 called_at = CURRENT_TIMESTAMP
             WHERE sender_id = ?
             ''',
-            (status, naam, class_label, phone, next_call, notes, sender_id),
+            (status, naam, class_label, phone, source, lead_type, next_call, notes, sender_id),
         )
         conn.commit()
 
