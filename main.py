@@ -739,20 +739,20 @@ def login_page(request: Request, error: str = ""):
         <title>Login - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: linear-gradient(135deg, #000000, #1c1c1e); background-size: cover; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #f5f5f7; overflow: hidden; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: #f5f5f7; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #1d1d1f; overflow: hidden; }}
             .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
-            .orb {{ position: absolute; border-radius: 50%; filter: blur(70px); z-index: -1; }}
-            .orb.one {{ width: 300px; height: 300px; background: rgba(10, 132, 255, 0.3); top: -100px; left: -100px; }}
-            .orb.two {{ width: 400px; height: 400px; background: rgba(94, 92, 230, 0.25); bottom: -150px; right: -150px; }}
-            .login-container {{ background: rgba(30, 30, 32, 0.6); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; }}
-            .logo-wrapper {{ width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); background: transparent; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
+            .orb {{ position: absolute; border-radius: 50%; filter: blur(80px); z-index: -1; }}
+            .orb.one {{ width: 350px; height: 350px; background: rgba(50, 170, 255, 0.4); top: -150px; left: -150px; }}
+            .orb.two {{ width: 450px; height: 450px; background: rgba(255, 100, 200, 0.25); bottom: -200px; right: -150px; }}
+            .login-container {{ background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.8) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.05); }}
+            .logo-wrapper {{ width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(0, 0, 0, 0.05); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); background: #fff; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
             .logo {{ width: 100%; height: 100%; object-fit: cover; transform: scale(3.6); }}
-            h2 {{ margin-top: 0; margin-bottom: 32px; font-weight: 500; font-size: 24px; color: #f5f5f7; letter-spacing: -0.5px; }}
-            input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; background: rgba(0, 0, 0, 0.3); color: #f5f5f7; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; }}
-            input::placeholder {{ color: rgba(235, 235, 245, 0.3); }}
-            input:focus {{ outline: none; border-color: rgba(10, 132, 255, 0.8); background: rgba(0, 0, 0, 0.4); box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.2); }}
-            button {{ width: 100%; padding: 14px 16px; background: #0A84FF; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; margin-top: 8px; }}
-            button:hover {{ background: #007AFF; }}
+            h2 {{ margin-top: 0; margin-bottom: 32px; font-weight: 600; font-size: 24px; color: #1d1d1f; letter-spacing: -0.5px; }}
+            input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 12px; background: rgba(255, 255, 255, 0.8); color: #1d1d1f; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02); }}
+            input::placeholder {{ color: rgba(0, 0, 0, 0.4); }}
+            input:focus {{ outline: none; border-color: rgba(10, 132, 255, 0.8); background: #fff; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.15); }}
+            button {{ width: 100%; padding: 14px 16px; background: #0A84FF; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; margin-top: 8px; box-shadow: 0 4px 12px rgba(10, 132, 255, 0.3); }}
+            button:hover {{ background: #007AFF; box-shadow: 0 6px 16px rgba(10, 132, 255, 0.4); }}
             button:active {{ transform: scale(0.97); }}
         </style>
     </head>
