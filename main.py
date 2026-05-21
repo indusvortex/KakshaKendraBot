@@ -747,7 +747,7 @@ def login_page(request: Request, error: str = "", success: str = ""):
             .orb.two {{ width: 450px; height: 450px; background: rgba(255, 100, 200, 0.25); bottom: -200px; right: -150px; }}
             .login-container {{ background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.8) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.05); }}
             .logo-wrapper {{ width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(0, 0, 0, 0.05); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); background: #fff; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
-            .logo {{ width: 100%; height: 100%; object-fit: cover; transform: scale(3.6); }}
+            .logo {{ width: 100%; height: 100%; object-fit: cover; transform: scale(1.7); }}
             h2 {{ margin-top: 0; margin-bottom: 32px; font-weight: 600; font-size: 24px; color: #1d1d1f; letter-spacing: -0.5px; }}
             input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 12px; background: rgba(255, 255, 255, 0.8); color: #1d1d1f; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02); }}
             input::placeholder {{ color: rgba(0, 0, 0, 0.4); }}
@@ -811,6 +811,8 @@ def forgot_password_page(request: Request, error: str = ""):
             .orb.one {{ width: 350px; height: 350px; background: rgba(50, 170, 255, 0.4); top: -150px; left: -150px; }}
             .orb.two {{ width: 450px; height: 450px; background: rgba(255, 100, 200, 0.25); bottom: -200px; right: -150px; }}
             .login-container {{ background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.8) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.05); }}
+            .logo-wrapper {{ width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(0, 0, 0, 0.05); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); background: #fff; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
+            .logo {{ width: 100%; height: 100%; object-fit: cover; transform: scale(1.7); }}
             h2 {{ margin-top: 0; margin-bottom: 12px; font-weight: 600; font-size: 24px; color: #1d1d1f; letter-spacing: -0.5px; }}
             p.desc {{ font-size: 14px; color: #6e6e73; margin-bottom: 24px; line-height: 1.5; }}
             input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 12px; background: rgba(255, 255, 255, 0.8); color: #1d1d1f; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02); }}
@@ -828,6 +830,9 @@ def forgot_password_page(request: Request, error: str = ""):
             <div class="orb one"></div>
             <div class="orb two"></div>
             <div class="login-container">
+                <div class="logo-wrapper">
+                    <img src="/static/img/kklogo.png" alt="Kaksha Kendra Logo" class="logo">
+                </div>
                 <h2>Reset Password</h2>
                 <p class="desc">Enter your registered WhatsApp number to receive your password.</p>
                 {error_html}
