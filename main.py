@@ -739,26 +739,38 @@ def login_page(request: Request, error: str = ""):
         <title>Login - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #0b141a; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e9edef; }}
-            .login-container {{ background-color: #111b21; padding: 40px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); width: 100%; max-width: 360px; text-align: center; border: 1px solid #222e35; }}
-            .logo {{ width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 24px; border: 2px solid #5288c1; }}
-            h2 {{ margin-top: 0; margin-bottom: 30px; font-weight: 600; font-size: 24px; color: #fff; }}
-            input {{ width: 100%; padding: 14px; margin-bottom: 20px; border: 1px solid #2a3942; border-radius: 8px; background: #202c33; color: #fff; font-size: 15px; box-sizing: border-box; transition: all 0.2s; }}
-            input:focus {{ outline: none; border-color: #5288c1; background: #2a3942; box-shadow: 0 0 0 3px rgba(82, 136, 193, 0.2); }}
-            button {{ width: 100%; padding: 14px; background-color: #5288c1; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }}
-            button:hover {{ background-color: #406f9d; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: linear-gradient(45deg, #0b141a, #0a1c2b, #122b40, #0a1c2b); background-size: 400% 400%; animation: gradientBG 15s ease infinite; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e9edef; }}
+            @keyframes gradientBG {{ 0% {{ background-position: 0% 50%; }} 50% {{ background-position: 100% 50%; }} 100% {{ background-position: 0% 50%; }} }}
+            .login-wrapper {{ position: relative; width: 100%; max-width: 380px; padding: 20px; box-sizing: border-box; }}
+            .orb {{ position: absolute; border-radius: 50%; filter: blur(60px); z-index: -1; opacity: 0.5; }}
+            .orb.one {{ width: 200px; height: 200px; background: #5288c1; top: -30px; left: -20px; }}
+            .orb.two {{ width: 250px; height: 250px; background: #0ea5e9; bottom: -50px; right: -30px; }}
+            .login-container {{ background: rgba(17, 27, 33, 0.4); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 40px; border-radius: 24px; box-shadow: 0 8px 32px 0 rgba(0,0,0,0.4); width: 100%; text-align: center; border: 1px solid rgba(255, 255, 255, 0.1); position: relative; overflow: hidden; box-sizing: border-box; }}
+            .login-container::before {{ content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); }}
+            .logo {{ width: 110px; height: 110px; border-radius: 50%; object-fit: cover; margin-bottom: 24px; border: 2px solid rgba(82, 136, 193, 0.5); box-shadow: 0 0 20px rgba(82, 136, 193, 0.3); background: #fff; }}
+            h2 {{ margin-top: 0; margin-bottom: 30px; font-weight: 600; font-size: 26px; color: #fff; letter-spacing: 0.5px; }}
+            input {{ width: 100%; padding: 16px; margin-bottom: 20px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; background: rgba(0, 0, 0, 0.2); color: #fff; font-size: 15px; box-sizing: border-box; transition: all 0.3s; backdrop-filter: blur(4px); }}
+            input::placeholder {{ color: rgba(255, 255, 255, 0.4); }}
+            input:focus {{ outline: none; border-color: rgba(82, 136, 193, 0.8); background: rgba(0, 0, 0, 0.4); box-shadow: 0 0 0 4px rgba(82, 136, 193, 0.15); transform: translateY(-1px); }}
+            button {{ width: 100%; padding: 16px; background: linear-gradient(135deg, #5288c1 0%, #2b5d92 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 15px rgba(82, 136, 193, 0.3); position: relative; overflow: hidden; }}
+            button:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px rgba(82, 136, 193, 0.4); filter: brightness(1.1); }}
+            button:active {{ transform: translateY(1px); }}
         </style>
     </head>
     <body>
-        <div class="login-container">
-            <img src="/static/img/kklogo.png" alt="Kaksha Kendra Logo" class="logo">
-            <h2>Welcome Back</h2>
-            {error_html}
-            <form action="/login" method="post">
-                <input type="text" name="username" placeholder="Username" required autofocus autocomplete="username">
-                <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
-                <button type="submit">Sign In</button>
-            </form>
+        <div class="login-wrapper">
+            <div class="orb one"></div>
+            <div class="orb two"></div>
+            <div class="login-container">
+                <img src="/static/img/kklogo.png" alt="Kaksha Kendra Logo" class="logo">
+                <h2>Welcome Back</h2>
+                {error_html}
+                <form action="/login" method="post">
+                    <input type="text" name="username" placeholder="Username" required autofocus autocomplete="username">
+                    <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
+                    <button type="submit">Sign In</button>
+                </form>
+            </div>
         </div>
     </body>
     </html>
