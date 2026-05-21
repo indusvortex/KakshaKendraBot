@@ -739,24 +739,20 @@ def login_page(request: Request, error: str = ""):
         <title>Login - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: linear-gradient(45deg, #0b141a, #0a1c2b, #122b40, #0a1c2b); background-size: 400% 400%; animation: gradientBG 15s ease infinite; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e9edef; perspective: 1200px; }}
-            @keyframes gradientBG {{ 0% {{ background-position: 0% 50%; }} 50% {{ background-position: 100% 50%; }} 100% {{ background-position: 0% 50%; }} }}
-            @keyframes float3d {{ 0% {{ transform: translateY(0px) rotateX(5deg) rotateY(-5deg); }} 50% {{ transform: translateY(-15px) rotateX(10deg) rotateY(5deg); }} 100% {{ transform: translateY(0px) rotateX(5deg) rotateY(-5deg); }} }}
-            .login-wrapper {{ position: relative; width: 100%; max-width: 380px; padding: 20px; box-sizing: border-box; transform-style: preserve-3d; animation: float3d 8s ease-in-out infinite; }}
-            .orb {{ position: absolute; border-radius: 50%; filter: blur(60px); z-index: -1; opacity: 0.6; transform: translateZ(-100px); }}
-            .orb.one {{ width: 220px; height: 220px; background: #5288c1; top: -40px; left: -40px; }}
-            .orb.two {{ width: 260px; height: 260px; background: #0ea5e9; bottom: -60px; right: -40px; }}
-            .login-container {{ background: rgba(17, 27, 33, 0.45); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); padding: 40px; border-radius: 24px; box-shadow: inset 2px 2px 5px rgba(255, 255, 255, 0.2), inset -3px -3px 7px rgba(0, 0, 0, 0.5), 0 25px 50px -12px rgba(0,0,0,0.7), 0 0 0 1px rgba(255, 255, 255, 0.1); width: 100%; text-align: center; position: relative; overflow: hidden; box-sizing: border-box; transform-style: preserve-3d; transform: translateZ(20px); }}
-            .login-container::before {{ content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); }}
-            .logo {{ width: 110px; height: 110px; border-radius: 50%; object-fit: cover; margin-bottom: 24px; border: 3px solid rgba(255, 255, 255, 0.8); box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4), inset 0 0 10px rgba(0,0,0,0.2); background: #fff; transform: translateZ(40px); transition: transform 0.3s; }}
-            .logo:hover {{ transform: translateZ(60px) scale(1.05); }}
-            h2 {{ margin-top: 0; margin-bottom: 30px; font-weight: 700; font-size: 28px; color: #fff; text-shadow: 0 4px 10px rgba(0,0,0,0.5); transform: translateZ(30px); }}
-            input {{ width: 100%; padding: 16px; margin-bottom: 20px; border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; background: rgba(0, 0, 0, 0.3); color: #fff; font-size: 15px; box-sizing: border-box; transition: all 0.3s; box-shadow: inset 0 3px 6px rgba(0,0,0,0.6), 0 2px 4px rgba(255,255,255,0.05); transform: translateZ(25px); }}
-            input::placeholder {{ color: rgba(255, 255, 255, 0.3); }}
-            input:focus {{ outline: none; border-color: rgba(82, 136, 193, 0.8); background: rgba(0, 0, 0, 0.5); box-shadow: inset 0 4px 8px rgba(0,0,0,0.8), 0 0 10px rgba(82, 136, 193, 0.4); }}
-            button {{ width: 100%; padding: 16px; background: linear-gradient(135deg, #5288c1 0%, #2b5d92 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 6px 0 #1e3f60, 0 15px 25px rgba(0,0,0,0.5); transform: translateZ(35px); }}
-            button:hover {{ filter: brightness(1.1); transform: translateZ(35px) translateY(-2px); box-shadow: 0 8px 0 #1e3f60, 0 20px 30px rgba(0,0,0,0.6); }}
-            button:active {{ transform: translateZ(35px) translateY(6px); box-shadow: 0 0px 0 transparent, 0 5px 10px rgba(0,0,0,0.4); margin-bottom: -6px; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: linear-gradient(135deg, #000000, #1c1c1e); background-size: cover; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #f5f5f7; overflow: hidden; }}
+            .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
+            .orb {{ position: absolute; border-radius: 50%; filter: blur(70px); z-index: -1; }}
+            .orb.one {{ width: 300px; height: 300px; background: rgba(10, 132, 255, 0.3); top: -100px; left: -100px; }}
+            .orb.two {{ width: 400px; height: 400px; background: rgba(94, 92, 230, 0.25); bottom: -150px; right: -150px; }}
+            .login-container {{ background: rgba(30, 30, 32, 0.6); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; }}
+            .logo {{ width: 88px; height: 88px; border-radius: 50%; object-fit: cover; margin-bottom: 24px; border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); background: #fff; }}
+            h2 {{ margin-top: 0; margin-bottom: 32px; font-weight: 500; font-size: 24px; color: #f5f5f7; letter-spacing: -0.5px; }}
+            input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; background: rgba(0, 0, 0, 0.3); color: #f5f5f7; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; }}
+            input::placeholder {{ color: rgba(235, 235, 245, 0.3); }}
+            input:focus {{ outline: none; border-color: rgba(10, 132, 255, 0.8); background: rgba(0, 0, 0, 0.4); box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.2); }}
+            button {{ width: 100%; padding: 14px 16px; background: #0A84FF; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; margin-top: 8px; }}
+            button:hover {{ background: #007AFF; }}
+            button:active {{ transform: scale(0.97); }}
         </style>
     </head>
     <body>
@@ -767,7 +763,7 @@ def login_page(request: Request, error: str = ""):
                 <img src="/static/img/kklogo.png" alt="Kaksha Kendra Logo" class="logo">
                 <h2>Welcome Back</h2>
                 {error_html}
-                <form action="/login" method="post" style="transform-style: preserve-3d;">
+                <form action="/login" method="post">
                     <input type="text" name="username" placeholder="Username" required autofocus autocomplete="username">
                     <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
                     <button type="submit">Sign In</button>
