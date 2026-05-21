@@ -7,9 +7,10 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form, UploadFile, File
+from fastapi import FastAPI, Request, HTTPException, Response, Depends, Form, UploadFile, File, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 import database
@@ -562,46 +563,102 @@ TEAM_USERNAME = os.getenv("TEAM_USERNAME", "Team")
 TEAM_PASSWORD = os.getenv("TEAM_PASSWORD", "kakshakendra2026")
 security = HTTPBasic()
 
+class NotAuthenticatedException(Exception):
+    pass
 
-def _check_admin(c: HTTPBasicCredentials) -> bool:
+def _check_admin(username, password) -> bool:
     return (
-        secrets.compare_digest(c.username, ADMIN_USERNAME)
-        and secrets.compare_digest(c.password, ADMIN_PASSWORD)
+        secrets.compare_digest(username, ADMIN_USERNAME)
+        and secrets.compare_digest(password, ADMIN_PASSWORD)
     )
 
-
-def _check_team(c: HTTPBasicCredentials) -> bool:
+def _check_team(username, password) -> bool:
     return (
-        secrets.compare_digest(c.username, TEAM_USERNAME)
-        and secrets.compare_digest(c.password, TEAM_PASSWORD)
+        secrets.compare_digest(username, TEAM_USERNAME)
+        and secrets.compare_digest(password, TEAM_PASSWORD)
     )
 
+def get_current_user(request: Request):
+    token = request.cookies.get("auth_token")
+    if not token:
+        raise NotAuthenticatedException()
+    role = database.get_state(f"session_{token}")
+    if not role:
+        raise NotAuthenticatedException()
+    return {"username": role.capitalize(), "role": role}
 
-def verify_user(credentials: HTTPBasicCredentials = Depends(security)) -> dict:
+def verify_user(user: dict = Depends(get_current_user)) -> dict:
+    """Allows both super-admin and team to access dashboard."""
+    return user
+
+def verify_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Super-admin only."""
+    if user["role"] != "super_admin":
+        raise HTTPException(status_code=403, detail="Super admin access required")
+    return user
+
+@app.exception_handler(NotAuthenticatedException)
+def auth_exception_handler(request: Request, exc: NotAuthenticatedException):
+    return RedirectResponse(url="/login", status_code=303)
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, error: str = ""):
+    error_html = f'<div style="color: #ef4444; background: #fee2e2; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; text-align: center; border: 1px solid #fca5a5;">{error}</div>' if error else ''
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Login - Kaksha Kendra</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #0b141a; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e9edef; }}
+            .login-container {{ background-color: #111b21; padding: 40px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); width: 100%; max-width: 360px; text-align: center; border: 1px solid #222e35; }}
+            .logo {{ width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 24px; border: 2px solid #5288c1; }}
+            h2 {{ margin-top: 0; margin-bottom: 30px; font-weight: 600; font-size: 24px; color: #fff; }}
+            input {{ width: 100%; padding: 14px; margin-bottom: 20px; border: 1px solid #2a3942; border-radius: 8px; background: #202c33; color: #fff; font-size: 15px; box-sizing: border-box; transition: all 0.2s; }}
+            input:focus {{ outline: none; border-color: #5288c1; background: #2a3942; box-shadow: 0 0 0 3px rgba(82, 136, 193, 0.2); }}
+            button {{ width: 100%; padding: 14px; background-color: #5288c1; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }}
+            button:hover {{ background-color: #406f9d; }}
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <img src="/static/img/kklogo.png" alt="Kaksha Kendra Logo" class="logo">
+            <h2>Welcome Back</h2>
+            {error_html}
+            <form action="/login" method="post">
+                <input type="text" name="username" placeholder="Username" required autofocus autocomplete="username">
+                <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
+                <button type="submit">Sign In</button>
+            </form>
+        </div>
+    </body>
+    </html>
     """
-    Allows both super-admin and team to access dashboard chat features.
-    Returns {'username', 'role'} where role is 'super_admin' or 'team'.
-    """
-    if _check_admin(credentials):
-        return {"username": credentials.username, "role": "super_admin"}
-    if _check_team(credentials):
-        return {"username": credentials.username, "role": "team"}
-    raise HTTPException(
-        status_code=401,
-        detail="Invalid credentials",
-        headers={"WWW-Authenticate": "Basic"},
-    )
 
+@app.post("/login")
+def login_post(username: str = Form(...), password: str = Form(...)):
+    if _check_admin(username, password):
+        role = "super_admin"
+    elif _check_team(username, password):
+        role = "team"
+    else:
+        return RedirectResponse(url="/login?error=Invalid+credentials", status_code=303)
+        
+    token = secrets.token_hex(32)
+    database.set_state(f"session_{token}", role)
+    response = RedirectResponse(url="/admin", status_code=303)
+    response.set_cookie(key="auth_token", value=token, httponly=True, max_age=86400 * 30)  # 30 days
+    return response
 
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)) -> dict:
-    """Super-admin only — used for settings, exports, system actions."""
-    if _check_admin(credentials):
-        return {"username": credentials.username, "role": "super_admin"}
-    raise HTTPException(
-        status_code=401,
-        detail="Super admin access required",
-        headers={"WWW-Authenticate": "Basic"},
-    )
+@app.get("/logout")
+def logout(request: Request):
+    token = request.cookies.get("auth_token")
+    if token:
+        database.set_state(f"session_{token}", "")
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("auth_token")
+    return response
 
 # Track processed message IDs to avoid duplicate processing
 # (WhatsApp can retry webhooks, sending the same message twice)
@@ -728,6 +785,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
 
 app = FastAPI(title="WhatsApp AI Coach Bot", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/webhook")
@@ -2045,6 +2103,7 @@ def admin_dashboard(
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
                         <div class="sidebar-title">🎓 Kaksha Kendra Bot {unread_html}</div>
                         {('<a href="/admin/settings" title="Bot Health & Settings" style="color:#7d8e9c;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s">⚙️</a>') if user.get("role") == "super_admin" else ('<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid rgba(245,158,11,0.3)">TEAM</span>')}
+                        <a href="/logout" title="Logout" style="color:#ef4444;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s;margin-left:8px;">🚪</a>
                     </div>
                     <div class="sidebar-meta" style="margin-top:6px">{len(conversations)} chats · {user.get("username", "?")} ({user.get("role", "?").replace("_", " ")})</div>
                 </div>
