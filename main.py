@@ -222,6 +222,7 @@ def _sync_to_google_sheets(
         "naam": (name or "Unknown").strip(),
         "class": _detect_class(message),
         "source": _detect_source(message) if is_new_lead else "",
+        "lead_type": "Online",
         "status": "New" if is_new_lead else "",
         "last_message": message[:200],
         "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M"),
