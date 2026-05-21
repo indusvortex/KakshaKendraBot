@@ -730,8 +730,9 @@ def auth_exception_handler(request: Request, exc: NotAuthenticatedException):
     return RedirectResponse(url="/login", status_code=303)
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, error: str = ""):
+def login_page(request: Request, error: str = "", success: str = ""):
     error_html = f'<div style="color: #ef4444; background: #fee2e2; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; text-align: center; border: 1px solid #fca5a5;">{error}</div>' if error else ''
+    success_html = f'<div style="color: #10b981; background: #d1fae5; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; text-align: center; border: 1px solid #6ee7b7;">{success}</div>' if success else ''
     return f"""
     <!DOCTYPE html>
     <html>
@@ -766,10 +767,12 @@ def login_page(request: Request, error: str = ""):
                 </div>
                 <h2>Welcome Back</h2>
                 {error_html}
+                {success_html}
                 <form action="/login" method="post">
                     <input type="text" name="username" placeholder="Username" required autofocus autocomplete="username">
                     <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
                     <button type="submit">Sign In</button>
+                    <a href="/forgot-password" class="forgot-link">Forgotten password?</a>
                 </form>
             </div>
         </div>
@@ -791,6 +794,86 @@ def login_post(username: str = Form(...), password: str = Form(...)):
     response = RedirectResponse(url="/admin", status_code=303)
     response.set_cookie(key="auth_token", value=token, httponly=True, max_age=86400 * 30)  # 30 days
     return response
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_page(request: Request, error: str = ""):
+    error_html = f'<div style="color: #ef4444; background: #fee2e2; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; text-align: center; border: 1px solid #fca5a5;">{error}</div>' if error else ''
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Forgot Password - Kaksha Kendra</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: #f5f5f7; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #1d1d1f; overflow: hidden; }}
+            .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
+            .orb {{ position: absolute; border-radius: 50%; filter: blur(80px); z-index: -1; }}
+            .orb.one {{ width: 350px; height: 350px; background: rgba(50, 170, 255, 0.4); top: -150px; left: -150px; }}
+            .orb.two {{ width: 450px; height: 450px; background: rgba(255, 100, 200, 0.25); bottom: -200px; right: -150px; }}
+            .login-container {{ background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.8) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.05); }}
+            h2 {{ margin-top: 0; margin-bottom: 12px; font-weight: 600; font-size: 24px; color: #1d1d1f; letter-spacing: -0.5px; }}
+            p.desc {{ font-size: 14px; color: #6e6e73; margin-bottom: 24px; line-height: 1.5; }}
+            input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 12px; background: rgba(255, 255, 255, 0.8); color: #1d1d1f; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02); }}
+            input::placeholder {{ color: rgba(0, 0, 0, 0.4); }}
+            input:focus {{ outline: none; border-color: rgba(10, 132, 255, 0.8); background: #fff; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.15); }}
+            button {{ width: 100%; padding: 14px 16px; background: #0A84FF; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; margin-top: 8px; box-shadow: 0 4px 12px rgba(10, 132, 255, 0.3); }}
+            button:hover {{ background: #007AFF; box-shadow: 0 6px 16px rgba(10, 132, 255, 0.4); }}
+            button:active {{ transform: scale(0.97); }}
+            .back-link {{ display: block; margin-top: 16px; font-size: 14px; color: #86868b; text-decoration: none; font-weight: 500; }}
+            .back-link:hover {{ color: #1d1d1f; }}
+        </style>
+    </head>
+    <body>
+        <div class="login-wrapper">
+            <div class="orb one"></div>
+            <div class="orb two"></div>
+            <div class="login-container">
+                <h2>Reset Password</h2>
+                <p class="desc">Enter your registered WhatsApp number to receive your password.</p>
+                {error_html}
+                <form action="/forgot-password" method="post">
+                    <input type="text" name="phone_number" placeholder="+91 9876543210" required autofocus>
+                    <button type="submit">Send via WhatsApp</button>
+                    <a href="/login" class="back-link">Back to Sign In</a>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.post("/forgot-password")
+def forgot_password_post(phone_number: str = Form(...)):
+    clean_num = ''.join(c for c in phone_number if c.isdigit())
+    admin_nums = [n.strip().lstrip('+') for n in os.getenv("ADMIN_NOTIFY_NUMBER", "").split(",") if n.strip()]
+    team_nums = [n.strip().lstrip('+') for n in os.getenv("TEAM_NOTIFY_NUMBERS", "").split(",") if n.strip()]
+    
+    found_password = None
+    role_name = None
+    
+    if clean_num in admin_nums:
+        found_password = os.getenv("ADMIN_PASSWORD", "kakshakendra2026")
+        role_name = "Admin"
+    elif clean_num in team_nums:
+        found_password = os.getenv("TEAM_PASSWORD", "kakshakendra2026")
+        role_name = "Team"
+        
+    if found_password and role_name:
+        message = (
+            f"🔒 *{role_name} Password Recovery*\n\n"
+            f"Your current password is:\n"
+            f"*{found_password}*\n\n"
+            f"⚠️ *Note:* For security reasons, the password cannot be changed here. "
+            f"It can only be changed from the Railway dashboard by the technical team."
+        )
+        try:
+            send_whatsapp_message(clean_num, message)
+            print(f"[Auth] Password recovery sent to +{clean_num} ({role_name})")
+        except Exception as e:
+            print(f"[Auth] Failed to send recovery to +{clean_num}: {e}")
+            
+    success_msg = "If the number is registered, your password has been sent to your WhatsApp."
+    return RedirectResponse(url=f"/login?success={success_msg.replace(' ', '+')}", status_code=303)
 
 @app.get("/logout")
 def logout(request: Request):
