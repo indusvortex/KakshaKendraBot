@@ -745,8 +745,8 @@ def login_page(request: Request, error: str = ""):
             .orb.one {{ width: 300px; height: 300px; background: rgba(10, 132, 255, 0.3); top: -100px; left: -100px; }}
             .orb.two {{ width: 400px; height: 400px; background: rgba(94, 92, 230, 0.25); bottom: -150px; right: -150px; }}
             .login-container {{ background: rgba(30, 30, 32, 0.6); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; }}
-            .logo-wrapper {{ width: 130px; height: 130px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); background: #fff; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
-            .logo {{ width: 100%; height: 100%; object-fit: cover; transform: scale(1.15); }}
+            .logo-wrapper {{ width: 120px; height: 120px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); background: transparent; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
+            .logo {{ width: 100%; height: 100%; object-fit: cover; transform: scale(3.5); }}
             h2 {{ margin-top: 0; margin-bottom: 32px; font-weight: 500; font-size: 24px; color: #f5f5f7; letter-spacing: -0.5px; }}
             input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; background: rgba(0, 0, 0, 0.3); color: #f5f5f7; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; }}
             input::placeholder {{ color: rgba(235, 235, 245, 0.3); }}
