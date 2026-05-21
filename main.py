@@ -740,21 +740,23 @@ def login_page(request: Request, error: str = "", success: str = ""):
         <title>Login - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: #f5f5f7; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #1d1d1f; overflow: hidden; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: radial-gradient(ellipse at 0% 0%, rgba(82,136,193,0.18) 0%, transparent 45%), radial-gradient(ellipse at 100% 100%, rgba(217,70,170,0.10) 0%, transparent 45%), radial-gradient(ellipse at 50% 50%, rgba(16,185,129,0.05) 0%, transparent 50%), linear-gradient(135deg, #0a1320 0%, #0e1621 50%, #14202d 100%); background-attachment: fixed; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e6edf3; overflow: hidden; }}
             .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
             .orb {{ position: absolute; border-radius: 50%; filter: blur(80px); z-index: -1; }}
             .orb.one {{ width: 350px; height: 350px; background: rgba(50, 170, 255, 0.4); top: -150px; left: -150px; }}
             .orb.two {{ width: 450px; height: 450px; background: rgba(255, 100, 200, 0.25); bottom: -200px; right: -150px; }}
-            .login-container {{ background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.8) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.05); }}
-            .logo-wrapper {{ width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(0, 0, 0, 0.05); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); background: #fff; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
+            .login-container {{ background: rgba(23, 33, 43, 0.65); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.2); }}
+            .logo-wrapper {{ width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(0, 0, 0, 0.05); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: #0a1320; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
             .logo {{ width: 100%; height: 100%; object-fit: cover; transform: scale(1.7); }}
-            h2 {{ margin-top: 0; margin-bottom: 32px; font-weight: 600; font-size: 24px; color: #1d1d1f; letter-spacing: -0.5px; }}
-            input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 12px; background: rgba(255, 255, 255, 0.8); color: #1d1d1f; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02); }}
-            input::placeholder {{ color: rgba(0, 0, 0, 0.4); }}
-            input:focus {{ outline: none; border-color: rgba(10, 132, 255, 0.8); background: #fff; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.15); }}
+            h2 {{ margin-top: 0; margin-bottom: 32px; font-weight: 600; font-size: 24px; color: #e6edf3; letter-spacing: -0.5px; }}
+            input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; background: rgba(36, 47, 61, 0.6); color: #e6edf3; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }}
+            input::placeholder {{ color: #7d8e9c; }}
+            input:focus {{ outline: none; border-color: rgba(82, 136, 193, 0.8); background: rgba(43, 57, 71, 0.85); box-shadow: 0 0 0 4px rgba(82, 136, 193, 0.15); }}
             button {{ width: 100%; padding: 14px 16px; background: #0A84FF; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; margin-top: 8px; box-shadow: 0 4px 12px rgba(10, 132, 255, 0.3); }}
             button:hover {{ background: #007AFF; box-shadow: 0 6px 16px rgba(10, 132, 255, 0.4); }}
             button:active {{ transform: scale(0.97); }}
+            .forgot-link {{ display: block; margin-top: 16px; font-size: 14px; color: #0A84FF; text-decoration: none; font-weight: 500; }}
+            .forgot-link:hover {{ text-decoration: underline; }}
         </style>
     </head>
     <body>
@@ -805,24 +807,24 @@ def forgot_password_page(request: Request, error: str = ""):
         <title>Forgot Password - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: #f5f5f7; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #1d1d1f; overflow: hidden; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: radial-gradient(ellipse at 0% 0%, rgba(82,136,193,0.18) 0%, transparent 45%), radial-gradient(ellipse at 100% 100%, rgba(217,70,170,0.10) 0%, transparent 45%), radial-gradient(ellipse at 50% 50%, rgba(16,185,129,0.05) 0%, transparent 50%), linear-gradient(135deg, #0a1320 0%, #0e1621 50%, #14202d 100%); background-attachment: fixed; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e6edf3; overflow: hidden; }}
             .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
             .orb {{ position: absolute; border-radius: 50%; filter: blur(80px); z-index: -1; }}
             .orb.one {{ width: 350px; height: 350px; background: rgba(50, 170, 255, 0.4); top: -150px; left: -150px; }}
             .orb.two {{ width: 450px; height: 450px; background: rgba(255, 100, 200, 0.25); bottom: -200px; right: -150px; }}
-            .login-container {{ background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.8) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.05); }}
-            .logo-wrapper {{ width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(0, 0, 0, 0.05); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); background: #fff; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
+            .login-container {{ background: rgba(23, 33, 43, 0.65); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); padding: 48px 40px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05) inset; width: 100%; text-align: center; position: relative; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.2); }}
+            .logo-wrapper {{ width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px auto; border: 1px solid rgba(0, 0, 0, 0.05); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: #0a1320; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
             .logo {{ width: 100%; height: 100%; object-fit: cover; transform: scale(1.7); }}
-            h2 {{ margin-top: 0; margin-bottom: 12px; font-weight: 600; font-size: 24px; color: #1d1d1f; letter-spacing: -0.5px; }}
-            p.desc {{ font-size: 14px; color: #6e6e73; margin-bottom: 24px; line-height: 1.5; }}
-            input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 12px; background: rgba(255, 255, 255, 0.8); color: #1d1d1f; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02); }}
-            input::placeholder {{ color: rgba(0, 0, 0, 0.4); }}
-            input:focus {{ outline: none; border-color: rgba(10, 132, 255, 0.8); background: #fff; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.15); }}
+            h2 {{ margin-top: 0; margin-bottom: 12px; font-weight: 600; font-size: 24px; color: #e6edf3; letter-spacing: -0.5px; }}
+            p.desc {{ font-size: 14px; color: #7d8e9c; margin-bottom: 24px; line-height: 1.5; }}
+            input {{ width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; background: rgba(36, 47, 61, 0.6); color: #e6edf3; font-size: 16px; box-sizing: border-box; transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }}
+            input::placeholder {{ color: #7d8e9c; }}
+            input:focus {{ outline: none; border-color: rgba(82, 136, 193, 0.8); background: rgba(43, 57, 71, 0.85); box-shadow: 0 0 0 4px rgba(82, 136, 193, 0.15); }}
             button {{ width: 100%; padding: 14px 16px; background: #0A84FF; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; margin-top: 8px; box-shadow: 0 4px 12px rgba(10, 132, 255, 0.3); }}
             button:hover {{ background: #007AFF; box-shadow: 0 6px 16px rgba(10, 132, 255, 0.4); }}
             button:active {{ transform: scale(0.97); }}
-            .back-link {{ display: block; margin-top: 16px; font-size: 14px; color: #86868b; text-decoration: none; font-weight: 500; }}
-            .back-link:hover {{ color: #1d1d1f; }}
+            .back-link {{ display: block; margin-top: 16px; font-size: 14px; color: #7d8e9c; text-decoration: none; font-weight: 500; }}
+            .back-link:hover {{ color: #e6edf3; }}
         </style>
     </head>
     <body>
