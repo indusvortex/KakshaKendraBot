@@ -1798,6 +1798,20 @@ a { color: #5288c1; text-decoration: none; }
     padding: 10px 12px;
     border-left: 3px solid #f59e0b;
 }
+.btn-new-lead {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-new-lead:hover {
+    background: rgba(245, 158, 11, 0.25);
+}
 .pending-panel-title {
     font-size: 11px;
     color: #f59e0b;
@@ -1966,9 +1980,10 @@ def _render_pending_leads_panel() -> str:
     if not leads:
         # Show empty state so admin knows the panel exists
         return """
-        <div class="pending-panel" style="opacity:0.7">
-            <div class="pending-panel-title">
+        <div class="pending-panel">
+            <div class="pending-panel-title" style="display:flex; justify-content:space-between; align-items:center;">
                 <span>📞 Pending Calls (0)</span>
+                <button class="btn-new-lead" onclick="openNewLeadModal()">+ Add Lead</button>
             </div>
             <div style="padding:8px 4px;color:#95a3b1;font-size:12px;text-align:center">
                 No leads waiting. New students will appear here automatically.
@@ -2018,8 +2033,9 @@ def _render_pending_leads_panel() -> str:
 
     return f"""
     <div class="pending-panel">
-        <div class="pending-panel-title">
+        <div class="pending-panel-title" style="display:flex; justify-content:space-between; align-items:center;">
             <span>📞 Pending Calls ({len(leads)}){extra_msg}</span>
+            <button class="btn-new-lead" onclick="openNewLeadModal()">+ Add Lead</button>
         </div>
         {''.join(items)}
     </div>
@@ -2431,6 +2447,65 @@ def admin_dashboard(
             setInterval(pollNewChats, 15000);
 
             // ============================================================
+            // NEW OFFLINE LEAD MODAL
+            // ============================================================
+            window.openNewLeadModal = function() {{
+                document.getElementById('nl-phone').value = '';
+                document.getElementById('nl-naam').value = '';
+                document.getElementById('nl-class').value = '';
+                document.getElementById('nl-source').value = 'Offline Walk-in';
+                document.getElementById('nl-type').value = 'Offline';
+                document.getElementById('nl-status').value = 'Pending';
+                document.getElementById('nl-next').value = '';
+                document.getElementById('nl-notes').value = '';
+                document.getElementById('new-lead-modal').classList.add('open');
+            }};
+
+            window.closeNewLeadModal = function() {{
+                document.getElementById('new-lead-modal').classList.remove('open');
+            }};
+
+            window.submitNewLead = async function(ev) {{
+                ev.preventDefault();
+                const payload = {{
+                    phone:     document.getElementById('nl-phone').value.trim(),
+                    naam:      document.getElementById('nl-naam').value.trim(),
+                    class:     document.getElementById('nl-class').value.trim(),
+                    source:    document.getElementById('nl-source').value.trim(),
+                    lead_type: document.getElementById('nl-type').value.trim(),
+                    status:    document.getElementById('nl-status').value.trim(),
+                    next_call: document.getElementById('nl-next').value.trim(),
+                    notes:     document.getElementById('nl-notes').value.trim(),
+                }};
+                
+                let phoneNum = payload.phone.replace(/[^0-9]/g, '');
+                if (!phoneNum) {{
+                    alert("Phone number is required!");
+                    return;
+                }}
+                if (phoneNum.length === 10) phoneNum = "91" + phoneNum;
+                payload.phone = "+" + phoneNum;
+                
+                try {{
+                    const res = await fetch('/admin/api/leads/manual', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        credentials: 'include',
+                        body: JSON.stringify(payload),
+                    }});
+                    if (res.ok) {{
+                        closeNewLeadModal();
+                        location.reload();
+                    }} else {{
+                        const err = await res.text();
+                        alert('Failed: ' + err);
+                    }}
+                }} catch (e) {{
+                    alert('Error: ' + e.message);
+                }}
+            }};
+
+            // ============================================================
             // MARK CALLED MODAL — opens from the pending-leads panel
             // ============================================================
             window.openCalledModal = function(senderId, naam, classLabel, phone) {{
@@ -2550,6 +2625,52 @@ def admin_dashboard(
                 <div class="modal-actions">
                     <button type="button" class="btn-cancel" onclick="closeCalledModal()">Cancel</button>
                     <button type="submit" class="btn-submit">✓ Mark Called</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- NEW OFFLINE LEAD MODAL -->
+        <div id="new-lead-modal" class="modal-backdrop" onclick="if(event.target===this) closeNewLeadModal()">
+            <form class="modal-card" onsubmit="submitNewLead(event)">
+                <h2>👤 Add New Lead</h2>
+                <div class="modal-sub">Manually enter a student who visited or called directly.</div>
+
+                <label>Phone Number *</label>
+                <input type="text" id="nl-phone" placeholder="980888..." required />
+
+                <label>Naam (Name)</label>
+                <input type="text" id="nl-naam" placeholder="Student's name" />
+
+                <label>Class</label>
+                <input type="text" id="nl-class" placeholder="Class 9 / Junior / etc." />
+
+                <label>From (Source)</label>
+                <input type="text" id="nl-source" placeholder="E.g. Walk-in, Referral, Poster" />
+
+                <label>Lead Type</label>
+                <select id="nl-type">
+                    <option>Offline</option>
+                    <option>Online</option>
+                </select>
+
+                <label>Status</label>
+                <select id="nl-status">
+                    <option>Pending</option>
+                    <option>Interested</option>
+                    <option>Enrolled</option>
+                    <option>Callback</option>
+                    <option>Not Interested</option>
+                </select>
+
+                <label>Next Call</label>
+                <input type="text" id="nl-next" placeholder="Kal 5 PM, Tomorrow 10 AM, etc." />
+
+                <label>Notes</label>
+                <textarea id="nl-notes" placeholder="Any details..."></textarea>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeNewLeadModal()">Cancel</button>
+                    <button type="submit" class="btn-submit">✓ Save Lead</button>
                 </div>
             </form>
         </div>
@@ -3728,6 +3849,98 @@ async def api_lead_called(
 
     print(f"[Lead] +{sender_id} marked '{status}' by {user['username']} ({user['role']})")
     return {"status": "ok", "lead": sheets_payload}
+
+
+@app.post("/admin/api/leads/manual")
+async def api_lead_manual(request: Request, user: dict = Depends(verify_user)):
+    """Allows manual entry of a new lead from the dashboard."""
+    body = await request.json()
+    phone = body.get("phone", "")
+    sender_id = phone.replace("+", "").replace(" ", "")
+    if not sender_id:
+        return {"status": "error", "message": "Phone number required"}
+        
+    naam = body.get("naam", "")
+    class_label = body.get("class", "")
+    source = body.get("source", "Offline Walk-in")
+    lead_type = body.get("lead_type", "Offline")
+    status = body.get("status", "Pending").lower()
+    next_call = body.get("next_call", "")
+    notes = body.get("notes", "")
+
+    # 1. Create a dummy contact so the chat panel doesn't crash if clicked
+    database.upsert_contact(sender_id, naam or "Unknown Offline Lead")
+
+    # 2. Add or update lead reminder
+    if status == "pending":
+        database.add_lead_reminder(
+            sender_id=sender_id,
+            naam=naam,
+            class_label=class_label,
+            phone=phone,
+            source=source,
+        )
+        database.mark_lead_called(
+            sender_id=sender_id,
+            naam=naam,
+            class_label=class_label,
+            phone=phone,
+            source=source,
+            lead_type=lead_type,
+            next_call=next_call,
+            notes=notes,
+            status="pending"
+        )
+    else:
+        database.add_lead_reminder(
+            sender_id=sender_id,
+            naam=naam,
+            class_label=class_label,
+            phone=phone,
+            source=source,
+        )
+        database.mark_lead_called(
+            sender_id=sender_id,
+            naam=naam,
+            class_label=class_label,
+            phone=phone,
+            source=source,
+            lead_type=lead_type,
+            next_call=next_call,
+            notes=notes,
+            status=status
+        )
+
+    # 3. Schedule Reminder if applicable
+    if next_call:
+        parsed_utc = _parse_next_call_to_utc(next_call)
+        database.set_scheduled_call(sender_id, parsed_utc)
+    
+    # 4. Sync to Google Sheets
+    sheets_payload = database.get_lead_reminder(sender_id)
+    if sheets_payload and os.getenv("GOOGLE_SHEETS_WEBHOOK"):
+        try:
+            import requests
+            requests.post(
+                os.getenv("GOOGLE_SHEETS_WEBHOOK"),
+                json={
+                    "phone": phone,
+                    "naam": naam,
+                    "class": class_label,
+                    "source": source,
+                    "lead_type": lead_type,
+                    "status": status,
+                    "next_call": next_call,
+                    "notes": notes,
+                    "is_new_lead": True,
+                },
+                timeout=4,
+            )
+        except Exception as e:
+            print(f"[Sheets] Manual lead sync failed: {e}")
+
+    print(f"[Lead] Manual lead +{sender_id} added by {user['username']}")
+    return {"status": "ok"}
 
 
 @app.post("/admin/api/leads/test")
