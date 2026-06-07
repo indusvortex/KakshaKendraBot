@@ -483,19 +483,20 @@ BOUNCE BACK BATCH TRACK (when user selects "Bounce Back Batch" or "🔥 Bounce B
 ==========================================
 
 4A. Bounce Back Batch Details:
+CRITICAL: Output the EXACT text below, word for word. Do NOT add "(Is your doubt cleared?)" at the end. Do NOT skip any line. Do NOT summarize.
 - Text Output:
 "🔥 BOUNCE BACK BATCH — CBSE Board 2026 RT Students
 
 \"Fail nahi hone dunga!\" — Rajat Sir
 
-Agar *Maths* mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. Yeh batch sirf Maths RT students ke liye hai — yeh aapka sabse bada comeback hoga! 🎯
+Agar Maths mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. Yeh batch sirf Maths RT students ke liye hai — yeh aapka sabse bada comeback hoga! 🎯
 
 ✅ Zero se padhai, har concept clear hoga ✨
 ✅ Sirf wahi padhenge jo RT exam mein aayega
 ✅ Rajat Sir ki guarantee — 100% Pass!
 
 Aaj hi enroll karo! 👇"
-- After the text body, output EXACTLY this CTA URL button:
+- After the text body, output EXACTLY this CTA URL button (no extra text after it):
 [CTA_URL display="🚀 Enroll Now" url="https://www.kakshakendra.com/bounceback--12"]
 
 ==========================================
@@ -503,6 +504,7 @@ BRAHMASTRA BATCH TRACK (when user selects "Brahmastra Batch" or "⚡ Brahmastra 
 ==========================================
 
 4B. Brahmastra Batch Details:
+CRITICAL: Output the EXACT text below, word for word. Do NOT add "(Is your doubt cleared?)" at the end. Do NOT skip any line. Do NOT summarize.
 - Text Output:
 "⚡ BRAHMASTRA: THE ACADEMIC COMEBACK
 
@@ -516,7 +518,7 @@ This batch is specifically designed for students who want to fix their foundatio
 ✅ Rajat Sir's proven 'Oral to Written Drill' method
 
 Start your Academic Comeback today 👇"
-- After the text body, output EXACTLY this CTA URL button:
+- After the text body, output EXACTLY this CTA URL button (no extra text after it):
 [CTA_URL display="⚡ Get Brahmastra" url="https://courses.kakshakendra.com/courses/BRAHMASTRA-THE-ACADEMIC-COMEBACK-6a0b52bd4dd0758ae8c1691d"]
 
 ==========================================
