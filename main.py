@@ -1084,19 +1084,37 @@ async def handle_whatsapp_message(request: Request):
                                     continue  # skip the AI step
                                 print(f"[Template] Falling back to AI for 'Call Us' (template failed)")
 
-                            # ----- Special intercept: Bounce Back Drip — student taps "Enroll Now" -----
+                            # ----- Special intercept: Bounce Back Batch selection → send message + start drip -----
+                            # NOTE: CTA URL buttons don't send replies to the bot (they just open the URL).
+                            # So we trigger the drip when the student selects "Bounce Back Batch" from the menu,
+                            # which IS a list/button reply we receive. We send the message directly (skip AI)
+                            # and start the 30s drip timer right away.
                             _msg_stripped = message_text.strip().lower()
-                            if _msg_stripped in {"enroll now", "🚀 enroll now", "enroll"}:
-                                # Student just tapped the Enroll Now button on Bounce Back batch
+                            _bb_triggers = {
+                                "🔥 bounce back batch", "bounce back batch",
+                                "bounce back", "bounceback batch", "bounceback"
+                            }
+                            if _msg_stripped in _bb_triggers:
                                 database.save_message(sender_id, "user", message_text)
-                                ack = "🚀 Great! Taking you to the enrollment page...\nEnroll karo aur Rajat Sir ki guarantee lo — *100% Pass!* 🎯"
-                                send_whatsapp_message(sender_id, ack)
-                                database.save_message(sender_id, "assistant", ack)
+                                # Send the Bounce Back message directly (not via AI)
+                                bb_msg = (
+                                    "🔥 BOUNCE BACK BATCH — CBSE Board 2026 RT Students\n\n"
+                                    "\"Fail nahi hone dunga!\" — Rajat Sir\n\n"
+                                    "Agar Maths mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. "
+                                    "Yeh batch sirf Maths RT students ke liye hai — yeh aapka sabse bada comeback hoga! 🎯\n\n"
+                                    "✅ Zero se padhai, har concept clear hoga ✨\n"
+                                    "✅ Sirf wahi padhenge jo RT exam mein aayega\n"
+                                    "✅ Rajat Sir ki guarantee — 100% Pass!\n\n"
+                                    "Aaj hi enroll karo! 👇\n"
+                                    "[CTA_URL display=\"🚀 Enroll Now\" url=\"https://www.kakshakendra.com/bounceback--12\"]"
+                                )
+                                send_whatsapp_message(sender_id, bb_msg)
+                                database.save_message(sender_id, "assistant", bb_msg)
                                 # Start the 30s → promo → 60s → YES/NO drip
                                 database.start_bounce_back_drip(sender_id)
-                                import asyncio
-                                asyncio.create_task(_bounce_back_drip_task(sender_id))
-                                print(f"[BounceBackDrip] Drip started for +{sender_id}")
+                                import asyncio as _asyncio
+                                _asyncio.create_task(_bounce_back_drip_task(sender_id))
+                                print(f"[BounceBackDrip] Drip started for +{sender_id} (triggered by batch selection)")
                                 continue  # skip AI
 
                             # ----- Special intercept: Bounce Back Drip — student says "Yes, Purchased" -----
