@@ -1009,6 +1009,33 @@ async def handle_whatsapp_message(request: Request):
                                     continue  # skip the AI step
                                 print(f"[Template] Falling back to AI for 'Call Us' (template failed)")
 
+                            # ----- Special intercept: On-screen copy / answer sheet issues -----
+                            # If a student asks about on-screen copy, answer re-evaluation,
+                            # or marking/checking issues, direct them to the email.
+                            _osc_keywords = [
+                                "on screen copy", "onscreen copy", "on-screen copy",
+                                "answer copy", "copy check", "check copy",
+                                "re-evaluation", "reevaluation", "re evaluation",
+                                "recheck", "re-check", "re check",
+                                "marks issue", "marks problem", "marking issue",
+                                "answer sheet", "answer check", "checking issue",
+                                "result issue", "result problem", "exam copy",
+                                "copy dekhi", "copy dekhna", "copy dikhao",
+                                "meri copy", "mera answer",
+                            ]
+                            _msg_lower = message_text.lower()
+                            if any(kw in _msg_lower for kw in _osc_keywords):
+                                _osc_reply = (
+                                    "📋 *On-Screen Copy / Answer Sheet Issue?*\n\n"
+                                    "Please send your answer copy or details of your concern directly to Rajat Sir:\n\n"
+                                    "📧 *rajatsir@kakshakendra.com*\n\n"
+                                    "Rajat Sir will personally review it and get back to you. 🙏"
+                                )
+                                database.save_message(sender_id, "user", message_text)
+                                send_whatsapp_message(sender_id, _osc_reply)
+                                database.save_message(sender_id, "assistant", _osc_reply)
+                                continue  # Skip AI step
+
                             # 1. Fetch past history BEFORE saving current message
                             #    so the current message doesn't appear twice in the AI prompt
                             history = database.get_recent_messages(sender_id, limit=10)
