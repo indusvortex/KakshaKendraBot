@@ -83,7 +83,99 @@ def init_db():
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS bounce_back_drip (
+                sender_id        TEXT PRIMARY KEY,
+                triggered_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                promo_sent       INTEGER DEFAULT 0,
+                check_sent       INTEGER DEFAULT 0,
+                purchased        INTEGER DEFAULT 0,
+                reminder_count   INTEGER DEFAULT 0,
+                last_reminder_at DATETIME
+            )
+        ''')
         conn.commit()
+
+
+# ============================================================
+# Bounce Back Drip — re-engagement flow for Enroll Now taps
+# ============================================================
+
+def start_bounce_back_drip(sender_id: str):
+    """Creates or resets a drip record when student taps Enroll Now."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''
+            INSERT INTO bounce_back_drip (sender_id, triggered_at, promo_sent, check_sent, purchased, reminder_count, last_reminder_at)
+            VALUES (?, CURRENT_TIMESTAMP, 0, 0, 0, 0, NULL)
+            ON CONFLICT(sender_id) DO UPDATE SET
+                triggered_at   = CURRENT_TIMESTAMP,
+                promo_sent     = 0,
+                check_sent     = 0,
+                purchased      = 0,
+                reminder_count = 0,
+                last_reminder_at = NULL
+        ''', (sender_id,))
+        conn.commit()
+
+
+def mark_bounce_back_promo_sent(sender_id: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE bounce_back_drip SET promo_sent=1 WHERE sender_id=?", (sender_id,))
+        conn.commit()
+
+
+def mark_bounce_back_check_sent(sender_id: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE bounce_back_drip SET check_sent=1 WHERE sender_id=?", (sender_id,))
+        conn.commit()
+
+
+def mark_bounce_back_purchased(sender_id: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE bounce_back_drip SET purchased=1 WHERE sender_id=?", (sender_id,))
+        conn.commit()
+
+
+def mark_bounce_back_reminder_sent(sender_id: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''
+            UPDATE bounce_back_drip
+            SET reminder_count = reminder_count + 1, last_reminder_at = CURRENT_TIMESTAMP
+            WHERE sender_id = ?
+        ''', (sender_id,))
+        conn.commit()
+
+
+def get_bounce_back_drip_due() -> list:
+    """Returns drip records that need a 4-hour reminder:
+    - Not yet purchased
+    - check_sent = 1 (YES/NO was sent)
+    - reminder_count < 5 (max 5 reminders = ~20 hours)
+    - last_reminder_at is NULL or >= 4 hours ago
+    - triggered_at is within 23 hours (stay safe within WhatsApp 24h window)
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute('''
+            SELECT * FROM bounce_back_drip
+            WHERE purchased = 0
+              AND check_sent = 1
+              AND reminder_count < 5
+              AND (
+                  last_reminder_at IS NULL
+                  OR (strftime('%s','now') - strftime('%s', last_reminder_at)) >= 14400
+              )
+              AND (strftime('%s','now') - strftime('%s', triggered_at)) < 82800
+        ''').fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_bounce_back_record(sender_id: str) -> dict | None:
+    """Returns the drip record for a specific sender, or None."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM bounce_back_drip WHERE sender_id=?", (sender_id,)).fetchone()
+        return dict(row) if row else None
 
 
 # ============================================================

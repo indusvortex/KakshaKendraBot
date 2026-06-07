@@ -603,12 +603,63 @@ def verify_admin(user: dict = Depends(get_current_user)) -> dict:
 # (WhatsApp can retry webhooks, sending the same message twice)
 processed_message_ids: set = set()
 
+
+# ============================================================
+# Bounce Back Drip — async task triggered when student taps Enroll Now
+# ============================================================
+
+async def _bounce_back_drip_task(sender_id: str):
+    """
+    Drip sequence launched after student taps 'Enroll Now' on Bounce Back Batch.
+    Step 1: Wait 30s → send promo code message
+    Step 2: Wait 60s more → send YES/NO purchase check
+    """
+    import asyncio
+    BOUNCE_BACK_ENROLL_URL = "https://www.kakshakendra.com/bounceback--12"
+
+    # --- Step 1: Wait 30 seconds, then send promo ---
+    await asyncio.sleep(30)
+    record = database.get_bounce_back_record(sender_id)
+    if not record or record.get("purchased"):
+        return  # Student already purchased or record gone
+    promo_msg = (
+        "🤔 *Still thinking? Humara special offer sirf aapke liye!*\n\n"
+        "Apply Promo Code at checkout:\n\n"
+        "🎟️ *RTCLASS12*\n\n"
+        "Get *FLAT ₹1000/- OFF!* 🎉\n"
+        "Original Price: ~~₹2499~~ → *Only ₹1499/-*\n\n"
+        "Offer limited — enroll abhi! 👇"
+    )
+    send_whatsapp_message(sender_id, promo_msg)
+    database.save_message(sender_id, "assistant", promo_msg)
+    database.mark_bounce_back_promo_sent(sender_id)
+    print(f"[BounceBackDrip] Promo sent to +{sender_id}")
+
+    # --- Step 2: Wait 60 more seconds, then ask YES/NO ---
+    await asyncio.sleep(60)
+    record = database.get_bounce_back_record(sender_id)
+    if not record or record.get("purchased"):
+        return
+    check_msg = (
+        "📋 Kya aapne course purchase kar liya?\n\n"
+        "[OPTIONS]\n"
+        "✅ Yes, I Purchased!\n"
+        "❌ Not Yet\n"
+        "[/OPTIONS]"
+    )
+    send_whatsapp_message(sender_id, check_msg)
+    database.save_message(sender_id, "assistant", check_msg)
+    database.mark_bounce_back_check_sent(sender_id)
+    print(f"[BounceBackDrip] Purchase check sent to +{sender_id}")
+
+
 async def reminder_loop():
     """
     Background loop that:
     - Re-pushes pending lead reminders to TEAM every 5 minutes.
     - Escalates to SUPER_ADMIN if a lead has been waiting > 2 minutes
       and no team member has responded yet.
+    - Sends 4-hour Bounce Back drip reminders to students who haven't purchased.
     Runs forever in the background.
     """
     import asyncio
@@ -705,6 +756,30 @@ async def reminder_loop():
                     mins_waiting = int(age_since_creation / 60)
                     _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
                     database.mark_lead_admin_notified(sender_id)
+
+            # === C. Bounce Back 4-hour drip reminders ===
+            for drip in database.get_bounce_back_drip_due():
+                sid = drip["sender_id"]
+                try:
+                    reminder_num = drip["reminder_count"] + 1
+                    reminder_msg = (
+                        f"🔥 *Bounce Back Batch — Reminder #{reminder_num}*\n\n"
+                        "\"Fail nahi hone dunga!\" — Rajat Sir\n\n"
+                        "✅ Zero se padhai, har concept clear hoga ✨\n"
+                        "✅ Sirf wahi padhenge jo RT exam mein aayega\n"
+                        "✅ Rajat Sir ki guarantee — 100% Pass!\n\n"
+                        "💰 *Discounted Fee: Sirf ₹1499/-*\n"
+                        "(Use code *RTCLASS12* at checkout)\n\n"
+                        "Aaj hi enroll karo! 👇\n"
+                        "https://www.kakshakendra.com/bounceback--12"
+                    )
+                    send_whatsapp_message(sid, reminder_msg)
+                    database.save_message(sid, "assistant", reminder_msg)
+                    database.mark_bounce_back_reminder_sent(sid)
+                    print(f"[BounceBackDrip] 4hr reminder #{reminder_num} sent to +{sid}")
+                except Exception as re:
+                    print(f"[BounceBackDrip] Reminder error for +{sid}: {re}")
+
         except Exception as e:
             print(f"[ReminderLoop] error: {e}")
         await asyncio.sleep(POLL_EVERY_SECONDS)
@@ -1008,6 +1083,49 @@ async def handle_whatsapp_message(request: Request):
                                     )
                                     continue  # skip the AI step
                                 print(f"[Template] Falling back to AI for 'Call Us' (template failed)")
+
+                            # ----- Special intercept: Bounce Back Drip — student taps "Enroll Now" -----
+                            _msg_stripped = message_text.strip().lower()
+                            if _msg_stripped in {"enroll now", "🚀 enroll now", "enroll"}:
+                                # Student just tapped the Enroll Now button on Bounce Back batch
+                                database.save_message(sender_id, "user", message_text)
+                                ack = "🚀 Great! Taking you to the enrollment page...\nEnroll karo aur Rajat Sir ki guarantee lo — *100% Pass!* 🎯"
+                                send_whatsapp_message(sender_id, ack)
+                                database.save_message(sender_id, "assistant", ack)
+                                # Start the 30s → promo → 60s → YES/NO drip
+                                database.start_bounce_back_drip(sender_id)
+                                import asyncio
+                                asyncio.create_task(_bounce_back_drip_task(sender_id))
+                                print(f"[BounceBackDrip] Drip started for +{sender_id}")
+                                continue  # skip AI
+
+                            # ----- Special intercept: Bounce Back Drip — student says "Yes, Purchased" -----
+                            if _msg_stripped in {"✅ yes, i purchased!", "yes, i purchased!", "yes purchased", "yes i purchased"}:
+                                database.save_message(sender_id, "user", message_text)
+                                database.mark_bounce_back_purchased(sender_id)
+                                congrats = (
+                                    "🎉 *Congratulations! Welcome to Bounce Back Batch!*\n\n"
+                                    "Rajat Sir ka promise hai — *Fail nahi hone dunga!* 💪\n\n"
+                                    "Course access ke liye apna registered email check karo.\n"
+                                    "Koi bhi problem ho toh hume WhatsApp karo! 😊"
+                                )
+                                send_whatsapp_message(sender_id, congrats)
+                                database.save_message(sender_id, "assistant", congrats)
+                                print(f"[BounceBackDrip] +{sender_id} confirmed purchase ✅")
+                                continue  # skip AI
+
+                            # ----- Special intercept: Bounce Back Drip — student says "Not Yet" -----
+                            if _msg_stripped in {"❌ not yet", "not yet"}:
+                                database.save_message(sender_id, "user", message_text)
+                                not_yet_msg = (
+                                    "No worries! 😊 Hum samjhte hain.\n\n"
+                                    "Yaad rakhna — *RTCLASS12* promo code use karke sirf *₹1499/-* mein enroll kar sakte ho! 🎟️\n\n"
+                                    "Hum thodi der baad aapko remind kar denge. 🔔"
+                                )
+                                send_whatsapp_message(sender_id, not_yet_msg)
+                                database.save_message(sender_id, "assistant", not_yet_msg)
+                                print(f"[BounceBackDrip] +{sender_id} said Not Yet — reminders will continue")
+                                continue  # skip AI
 
                             # ----- Special intercept: On-screen copy / answer sheet issues -----
                             # If a student asks about on-screen copy, answer re-evaluation,
