@@ -488,7 +488,7 @@ BOUNCE BACK BATCH TRACK (when user selects "Bounce Back Batch" or "🔥 Bounce B
 
 \"Fail nahi hone dunga!\" — Rajat Sir
 
-Agar Maths ya Science mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. Yeh aapka sabse bada comeback hoga! 🎯
+Agar *Maths* mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. Yeh batch sirf Maths RT students ke liye hai — yeh aapka sabse bada comeback hoga! 🎯
 
 ✅ Zero se padhai, har concept clear hoga ✨
 ✅ Sirf wahi padhenge jo RT exam mein aayega
