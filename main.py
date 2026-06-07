@@ -2008,7 +2008,7 @@ def _render_pending_leads_panel() -> str:
     if not leads:
         # Show empty state so admin knows the panel exists
         return """
-        <div class="pending-panel">
+        <div id="pending-panel-wrapper"><div class="pending-panel">
             <div class="pending-panel-title" style="display:flex; justify-content:space-between; align-items:center;">
                 <span>📞 Pending Calls (0)</span>
                 <button class="btn-new-lead" onclick="openNewLeadModal()">+ Add Lead</button>
@@ -2016,7 +2016,7 @@ def _render_pending_leads_panel() -> str:
             <div style="padding:8px 4px;color:#95a3b1;font-size:12px;text-align:center">
                 No leads waiting. New students will appear here automatically.
             </div>
-        </div>
+        </div></div>
         """
 
     items = []
@@ -2060,13 +2060,13 @@ def _render_pending_leads_panel() -> str:
     extra_msg = f' · <span style="color:#fff">+{extra_count} more</span>' if extra_count > 0 else ''
 
     return f"""
-    <div class="pending-panel">
+    <div id="pending-panel-wrapper"><div class="pending-panel">
         <div class="pending-panel-title" style="display:flex; justify-content:space-between; align-items:center;">
             <span>📞 Pending Calls ({len(leads)}){extra_msg}</span>
             <button class="btn-new-lead" onclick="openNewLeadModal()">+ Add Lead</button>
         </div>
         {''.join(items)}
-    </div>
+    </div></div>
     """
 
 
@@ -2241,7 +2241,7 @@ def admin_dashboard(
         <meta name="apple-mobile-web-app-capable" content="yes"/>
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
         <meta name="apple-mobile-web-app-title" content="KK Bot"/>
-        <meta http-equiv="refresh" content="60">
+        <!-- meta refresh removed: AJAX handles all live updates without wiping typed content -->
         <style>{_ADMIN_CSS}</style>
     </head>
     <body class="{body_class}">
@@ -2473,6 +2473,30 @@ def admin_dashboard(
             // Start polling immediately + every 15 seconds
             pollNewChats();
             setInterval(pollNewChats, 15000);
+
+            // ============================================================
+            // SILENT PENDING PANEL REFRESH — every 30s, skips if typing
+            // ============================================================
+            async function refreshPendingPanel() {{
+                // Don't refresh if user is actively typing anywhere
+                const active = document.activeElement;
+                const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+                if (isTyping) {{
+                    console.log('[PendingPanel] Skipped refresh — user is typing');
+                    return;
+                }}
+                try {{
+                    const res = await fetch('/admin/api/pending-panel', {{ credentials: 'include' }});
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const wrapper = document.getElementById('pending-panel-wrapper');
+                    if (wrapper) wrapper.outerHTML = data.html;
+                }} catch (e) {{
+                    console.warn('[PendingPanel] Refresh failed:', e);
+                }}
+            }}
+            // Run every 30s — silently updates pending calls without page reload
+            setInterval(refreshPendingPanel, 30000);
 
             // ============================================================
             // NEW OFFLINE LEAD MODAL
@@ -3775,6 +3799,15 @@ def call_redirect(number: str):
 def admin_api_conversations(user: dict = Depends(verify_user)):
     """JSON endpoint listing all conversations."""
     return {"conversations": database.get_all_conversations()}
+
+
+@app.get("/admin/api/pending-panel")
+def admin_api_pending_panel(user: dict = Depends(verify_user)):
+    """Returns the latest Pending Calls panel HTML for silent AJAX refresh.
+    The dashboard JS calls this every 30s and swaps the panel in-place
+    without reloading the page or wiping any typed content."""
+    html = _render_pending_leads_panel()
+    return {"html": html}
 
 
 # ============================================================
