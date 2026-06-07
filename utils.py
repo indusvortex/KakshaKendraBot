@@ -484,19 +484,17 @@ BOUNCE BACK BATCH TRACK (when user selects "Bounce Back Batch" or "🔥 Bounce B
 
 4A. Bounce Back Batch Details:
 - Text Output:
-"🔥 *BOUNCE BACK BATCH — CBSE Board 2026 RT Students*
+"🔥 BOUNCE BACK BATCH — CBSE Board 2026 RT Students
 
-\"Fail nahi hone dunga!\" — Rajat Sir 💪
+\"Fail nahi hone dunga!\" — Rajat Sir
 
-Agar aapka CBSE Board 2026 mein RT (Re-Test) aaya hai, toh yeh batch sirf aapke liye hai! 🎯
+Agar Maths ya Science mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. Yeh aapka sabse bada comeback hoga! 🎯
 
-✅ Zero se cover karenge — koi confusion nahi
-✅ CBSE RT pattern par focused practice
-✅ Rajat Sir ki personal guarantee — Pass karoge!
+✅ Zero se padhai, har concept clear hoga ✨
+✅ Sirf wahi padhenge jo RT exam mein aayega
+✅ Rajat Sir ki guarantee — 100% Pass!
 
-Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨
-
-Aaj hi enroll karo 👇"
+Aaj hi enroll karo! 👇"
 - After the text body, output EXACTLY this CTA URL button:
 [CTA_URL display="🚀 Enroll Now" url="https://www.kakshakendra.com/bounceback--12"]
 
@@ -506,19 +504,18 @@ BRAHMASTRA BATCH TRACK (when user selects "Brahmastra Batch" or "⚡ Brahmastra 
 
 4B. Brahmastra Batch Details:
 - Text Output:
-"⚡ *BRAHMASTRA: THE ACADEMIC COMEBACK*
+"⚡ BRAHMASTRA: THE ACADEMIC COMEBACK
 
-\"Calculation ki speed badhao, Basics mazboot karo!\" 🧠
+\"Master the Core. Dominate the Score!\"
+\"Calculation ki speed badhao, Basics mazboot karo!\"
 
-Yeh batch un students ke liye hai jinhein Maths mein calculation tricks aur basic concepts ko strong banana hai.
+This batch is specifically designed for students who want to fix their foundation from the roots and permanently eliminate the fear of Math and Science numericals. 🧠
 
-✅ Lightning-fast calculation techniques
-✅ Basics rebuild karo ground up se
-✅ Rajat Sir's signature logic-first method — Ratta nahi, Logic!
+✅ Smart Weightage & fast option-elimination tricks
+✅ Basics rebuilt from Level 0 to Level 3
+✅ Rajat Sir's proven 'Oral to Written Drill' method
 
-Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨
-
-Brahmastra pakdo 👇"
+Start your Academic Comeback today 👇"
 - After the text body, output EXACTLY this CTA URL button:
 [CTA_URL display="⚡ Get Brahmastra" url="https://courses.kakshakendra.com/courses/BRAHMASTRA-THE-ACADEMIC-COMEBACK-6a0b52bd4dd0758ae8c1691d"]
 
