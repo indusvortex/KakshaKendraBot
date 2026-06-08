@@ -1119,13 +1119,13 @@ async def handle_whatsapp_message(request: Request):
                                 continue  # skip AI
 
                             # ================================================================
-                            # BOUNCE BACK BATCH — exact + intent triggers
+                            # BOUNCE BACK BATCH — all keywords use substring matching
+                            # e.g. "I want to enroll in bounceback batch" → matches "bounceback"
                             # ================================================================
-                            _bb_exact = {
-                                "🔥 bounce back batch", "bounce back batch",
-                                "bounce back", "bounceback batch", "bounceback"
-                            }
-                            _bb_intent_kw = [
+                            _bb_keywords = [
+                                # Core names
+                                "bounce back batch", "bounce back", "bounceback batch", "bounceback",
+                                # Intent keywords
                                 "rt batch", "rt course", "rt class", "rt exam",
                                 "re test", "retest", "re-test",
                                 "fail ho gaya", "fail hogaya", "fail hua",
@@ -1134,9 +1134,9 @@ async def handle_whatsapp_message(request: Request):
                                 "pass hona hai", "pass kaise",
                                 "bounce back kya", "bounce back batao",
                                 "bounce back details", "bounce back fee",
+                                "enroll bounce", "join bounce",
                             ]
-                            _is_bb = (_msg_stripped in _bb_exact or
-                                      any(kw in _msg_stripped for kw in _bb_intent_kw))
+                            _is_bb = any(kw in _msg_stripped for kw in _bb_keywords)
                             if _is_bb:
                                 database.save_message(sender_id, "user", message_text)
                                 bb_msg = (
@@ -1155,17 +1155,16 @@ async def handle_whatsapp_message(request: Request):
                                 database.start_bounce_back_drip(sender_id)
                                 import asyncio as _asyncio
                                 _asyncio.create_task(_bounce_back_drip_task(sender_id))
-                                print(f"[BounceBackDrip] Drip started for +{sender_id} (intent: '{_msg_stripped[:40]}')")
+                                print(f"[BounceBackDrip] Drip started for +{sender_id} (intent: '{_msg_stripped[:50]}')")
                                 continue  # skip AI
 
                             # ================================================================
-                            # BRAHMASTRA BATCH — exact + intent triggers
+                            # BRAHMASTRA BATCH — all keywords use substring matching
                             # ================================================================
-                            _bm_exact = {
-                                "⚡ brahmastra batch", "brahmastra batch",
-                                "brahmastra", "brahmstra", "brahmastr"
-                            }
-                            _bm_intent_kw = [
+                            _bm_keywords = [
+                                # Core names
+                                "brahmastra batch", "brahmastra", "brahmstra", "brahmastr",
+                                # Intent keywords
                                 "calculation speed", "calculation trick",
                                 "basics strong", "basics weak", "basic weak",
                                 "foundation fix", "foundation weak",
@@ -1174,9 +1173,9 @@ async def handle_whatsapp_message(request: Request):
                                 "brahmastra kya", "brahmastra batao",
                                 "brahmastra details", "brahmastra fee",
                                 "academic comeback",
+                                "enroll brahmastra", "join brahmastra",
                             ]
-                            _is_bm = (_msg_stripped in _bm_exact or
-                                      any(kw in _msg_stripped for kw in _bm_intent_kw))
+                            _is_bm = any(kw in _msg_stripped for kw in _bm_keywords)
                             if _is_bm:
                                 database.save_message(sender_id, "user", message_text)
                                 bm_msg = (
@@ -1194,20 +1193,17 @@ async def handle_whatsapp_message(request: Request):
                                 )
                                 send_whatsapp_message(sender_id, bm_msg)
                                 database.save_message(sender_id, "assistant", bm_msg)
-                                print(f"[Brahmastra] Direct message sent to +{sender_id} (intent: '{_msg_stripped[:40]}')")
+                                print(f"[Brahmastra] Direct message sent to +{sender_id} (intent: '{_msg_stripped[:50]}')")
                                 continue  # skip AI
 
                             # ================================================================
-                            # SEMINAR REGISTRATION — exact + intent + ad pre-fill triggers
-                            # Ad pre-fill examples:
-                            #   "Hi Rajat Sir! Please reserve my spot for the upcoming Free Seminar. ✨"
-                            #   "I want to register for the seminar"
+                            # SEMINAR REGISTRATION — all keywords use substring matching
+                            # Catches ad pre-fills like "Please reserve my spot for the Free Seminar"
                             # ================================================================
-                            _sem_exact = {
-                                "📋 seminar registration", "seminar registration",
-                                "seminar", "seminar reg", "register seminar"
-                            }
-                            _sem_intent_kw = [
+                            _sem_keywords = [
+                                # Core names
+                                "seminar registration", "seminar reg", "register seminar",
+                                # Intent keywords
                                 "seminar kab", "seminar date", "seminar time",
                                 "seminar register", "seminar join",
                                 "seminar details", "seminar mein",
@@ -1219,8 +1215,10 @@ async def handle_whatsapp_message(request: Request):
                                 "spot for the", "spot for seminar",
                                 "seminar ke liye register", "seminar booking",
                             ]
-                            _is_sem = (_msg_stripped in _sem_exact or
-                                       any(kw in _msg_stripped for kw in _sem_intent_kw))
+                            # Also match exact "seminar" alone (from menu button)
+                            _is_sem = (_msg_stripped == "seminar" or
+                                       _msg_stripped == "📋 seminar registration" or
+                                       any(kw in _msg_stripped for kw in _sem_keywords))
                             if _is_sem:
                                 database.save_message(sender_id, "user", message_text)
                                 database.start_seminar_registration(sender_id)
