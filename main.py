@@ -1222,20 +1222,38 @@ async def handle_whatsapp_message(request: Request):
                                     )
 
                                 elif step == "seminar_address":
-                                    # Final step — save address and mark complete
+                                    # Final step — save address, mark complete in SQLite (state only)
                                     database.update_seminar_field(sender_id, "address", val, "seminar_done")
-                                    st = database.get_seminar_state(sender_id) or _seminar_state
-                                    # Re-fetch to get all fields
+
+                                    # Re-fetch all fields from SQLite state record
                                     import sqlite3 as _sql
                                     with _sql.connect("whatsapp_bot.db") as _c:
                                         _c.row_factory = _sql.Row
                                         _row = _c.execute("SELECT * FROM seminar_registrations WHERE sender_id=?", (sender_id,)).fetchone()
                                         _data = dict(_row) if _row else {}
-                                    _name     = _data.get("naam") or "—"
-                                    _cls      = _data.get("class_label") or "—"
-                                    _father   = _data.get("father_name") or "—"
-                                    _mob      = _data.get("mobile") or "—"
-                                    _alt      = _data.get("alt_mobile") or "—"
+                                    _name   = _data.get("naam")        or "—"
+                                    _cls    = _data.get("class_label") or "—"
+                                    _father = _data.get("father_name") or "—"
+                                    _mob    = _data.get("mobile")      or "—"
+                                    _alt    = _data.get("alt_mobile")  or "—"
+
+                                    # ── Push to Google Sheet via Apps Script ──
+                                    _sheet_url = os.getenv("SEMINAR_SHEET_URL", "").strip()
+                                    if _sheet_url:
+                                        try:
+                                            import httpx as _hx
+                                            _hx.post(_sheet_url, json={
+                                                "whatsapp":    "+" + sender_id,
+                                                "naam":        _name,
+                                                "class_label": _cls,
+                                                "father_name": _father,
+                                                "mobile":      _mob,
+                                                "alt_mobile":  _alt,
+                                                "address":     val,
+                                            }, timeout=10)
+                                            print(f"[Seminar] Data pushed to Google Sheet for +{sender_id}")
+                                        except Exception as _se:
+                                            print(f"[Seminar] Google Sheet push failed: {_se} — continuing anyway")
 
                                     # Confirmation to student
                                     reply = (
@@ -1253,7 +1271,7 @@ async def handle_whatsapp_message(request: Request):
                                         "*Kaksha Kendra — Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨*"
                                     )
 
-                                    # Notify admin
+                                    # WhatsApp notification to admin
                                     _admin_nums = os.getenv("ADMIN_NOTIFY_NUMBER", "").strip()
                                     if _admin_nums:
                                         _admin_msg = (
