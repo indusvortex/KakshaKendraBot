@@ -1225,17 +1225,12 @@ async def handle_whatsapp_message(request: Request):
                                     # Final step — save address, mark complete in SQLite (state only)
                                     database.update_seminar_field(sender_id, "address", val, "seminar_done")
 
-                                    # Re-fetch all fields from SQLite state record
-                                    import sqlite3 as _sql
-                                    with _sql.connect("whatsapp_bot.db") as _c:
-                                        _c.row_factory = _sql.Row
-                                        _row = _c.execute("SELECT * FROM seminar_registrations WHERE sender_id=?", (sender_id,)).fetchone()
-                                        _data = dict(_row) if _row else {}
-                                    _name   = _data.get("naam")        or "—"
-                                    _cls    = _data.get("class_label") or "—"
-                                    _father = _data.get("father_name") or "—"
-                                    _mob    = _data.get("mobile")      or "—"
-                                    _alt    = _data.get("alt_mobile")  or "—"
+                                    # Use fields already collected in _seminar_state + address from this step
+                                    _name   = _seminar_state.get("naam")        or "—"
+                                    _cls    = _seminar_state.get("class_label") or "—"
+                                    _father = _seminar_state.get("father_name") or "—"
+                                    _mob    = _seminar_state.get("mobile")      or "—"
+                                    _alt    = _seminar_state.get("alt_mobile")  or "—"
 
                                     # ── Push to Google Sheet via Apps Script ──
                                     _sheet_url = os.getenv("SEMINAR_SHEET_URL", "").strip()
