@@ -1250,7 +1250,8 @@ async def handle_whatsapp_message(request: Request):
                                                 "mobile":      _mob,
                                                 "alt_mobile":  _alt,
                                                 "address":     val,
-                                            }, timeout=10)
+                                                "source":      "Bot",
+                                            }, timeout=10, follow_redirects=True)
                                             print(f"[Seminar] Data pushed to Google Sheet for +{sender_id}")
                                         except Exception as _se:
                                             print(f"[Seminar] Google Sheet push failed: {_se} — continuing anyway")
@@ -4305,7 +4306,7 @@ async def admin_api_seminar_add(request: Request, user: dict = Depends(verify_us
 
     try:
         import httpx
-        resp = httpx.post(sheet_url, json=payload, timeout=10)
+        resp = httpx.post(sheet_url, json=payload, timeout=10, follow_redirects=True)
         resp.raise_for_status()
         print(f"[SeminarManual] Entry added by {user.get('username')} — {payload.get('naam')}")
         return {"ok": True}
