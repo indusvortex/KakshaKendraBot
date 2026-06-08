@@ -2132,6 +2132,67 @@ a { color: #5288c1; text-decoration: none; }
 .btn-new-lead:hover {
     background: rgba(245, 158, 11, 0.25);
 }
+.btn-add-seminar {
+    width: 100%;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(99,102,241,0.15));
+    color: #a78bfa;
+    border: 1px solid rgba(139,92,246,0.3);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+.btn-add-seminar:hover {
+    background: linear-gradient(135deg, rgba(139,92,246,0.28), rgba(99,102,241,0.28));
+    border-color: rgba(139,92,246,0.5);
+}
+.seminar-modal-overlay {
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+    z-index:1000;align-items:center;justify-content:center;
+}
+.seminar-modal-overlay.active { display:flex; }
+.seminar-modal-card {
+    background:#1a2535;border-radius:16px;padding:28px;
+    width:100%;max-width:460px;max-height:90vh;overflow-y:auto;
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 20px 60px rgba(0,0,0,0.5);
+}
+.seminar-modal-card h3 {
+    margin:0 0 4px;font-size:17px;color:#e6edf3;
+}
+.seminar-modal-card .sm-sub {
+    font-size:12px;color:#7d8e9c;margin-bottom:18px;
+}
+.seminar-field { margin-bottom:14px; }
+.seminar-field label {
+    display:block;font-size:11px;color:#95a3b1;
+    font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;
+}
+.seminar-field input, .seminar-field textarea {
+    width:100%;padding:10px 12px;background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+    color:#e6edf3;font-size:13px;outline:none;
+    transition:border 0.2s;box-sizing:border-box;
+}
+.seminar-field input:focus {
+    border-color:rgba(139,92,246,0.5);
+}
+.seminar-modal-actions { display:flex;gap:10px;margin-top:18px; }
+.seminar-modal-actions button {
+    flex:1;padding:11px;border-radius:10px;border:none;
+    font-weight:600;cursor:pointer;font-size:13px;transition:all 0.15s;
+}
+.sm-cancel {
+    background:rgba(255,255,255,0.06);color:#e6edf3;
+    border:1px solid rgba(255,255,255,0.08) !important;
+}
+.sm-save {
+    background:linear-gradient(135deg,#8b5cf6,#6366f1);
+    color:white;box-shadow:0 4px 14px rgba(139,92,246,0.4);
+}
 .pending-panel-title {
     font-size: 11px;
     color: #f59e0b;
@@ -2551,6 +2612,11 @@ def admin_dashboard(
                 <div class="search-box">
                     <input type="text" id="search" placeholder="🔍 Search students..." oninput="filterChats(this.value)" />
                 </div>
+                <div style="padding:6px 12px 4px">
+                    <button class="btn-add-seminar" onclick="openSeminarModal()">
+                        📋 + Add Seminar Registration
+                    </button>
+                </div>
                 <div class="chat-list" id="chat-list">
                     {items_html}
                 </div>
@@ -2791,6 +2857,71 @@ def admin_dashboard(
             setInterval(refreshPendingPanel, 30000);
 
             // ============================================================
+            // SEMINAR REGISTRATION MODAL
+            // ============================================================
+            window.openSeminarModal = function() {{
+                ['sm-naam','sm-class','sm-father','sm-mobile','sm-alt','sm-address','sm-wa'].forEach(id => {{
+                    document.getElementById(id).value = '';
+                }});
+                document.getElementById('sm-error').style.display = 'none';
+                document.getElementById('sm-submit-btn').disabled = false;
+                document.getElementById('sm-submit-btn').textContent = '✅ Save to Google Sheet';
+                document.getElementById('seminar-modal').classList.add('active');
+            }};
+
+            window.closeSeminarModal = function() {{
+                document.getElementById('seminar-modal').classList.remove('active');
+            }};
+
+            window.submitSeminarForm = async function() {{
+                const naam    = document.getElementById('sm-naam').value.trim();
+                const cls     = document.getElementById('sm-class').value.trim();
+                const father  = document.getElementById('sm-father').value.trim();
+                const mobile  = document.getElementById('sm-mobile').value.trim();
+                const alt     = document.getElementById('sm-alt').value.trim();
+                const address = document.getElementById('sm-address').value.trim();
+                const wa      = document.getElementById('sm-wa').value.trim() || mobile;
+                const errEl   = document.getElementById('sm-error');
+
+                if (!naam || !cls || !father || !mobile || !address) {{
+                    errEl.textContent = '⚠️ Please fill all required fields (marked with *)';
+                    errEl.style.display = 'block';
+                    return;
+                }}
+                errEl.style.display = 'none';
+
+                const btn = document.getElementById('sm-submit-btn');
+                btn.disabled = true;
+                btn.textContent = '⏳ Saving...';
+
+                try {{
+                    const res = await fetch('/admin/api/seminar-add', {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        credentials: 'include',
+                        body: JSON.stringify({{ naam, class_label: cls, father_name: father,
+                                               mobile, alt_mobile: alt, address, whatsapp: wa }})
+                    }});
+                    const data = await res.json();
+                    if (data.ok) {{
+                        btn.textContent = '✅ Saved!';
+                        btn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+                        setTimeout(() => closeSeminarModal(), 1200);
+                    }} else {{
+                        errEl.textContent = '❌ Error: ' + (data.error || 'Could not save. Check SEMINAR_SHEET_URL.');
+                        errEl.style.display = 'block';
+                        btn.disabled = false;
+                        btn.textContent = '✅ Save to Google Sheet';
+                    }}
+                }} catch(err) {{
+                    errEl.textContent = '❌ Network error. Try again.';
+                    errEl.style.display = 'block';
+                    btn.disabled = false;
+                    btn.textContent = '✅ Save to Google Sheet';
+                }}
+            }};
+
+            // ============================================================
             // NEW OFFLINE LEAD MODAL
             // ============================================================
             window.openNewLeadModal = function() {{
@@ -2971,6 +3102,52 @@ def admin_dashboard(
                     <button type="submit" class="btn-submit">✓ Mark Called</button>
                 </div>
             </form>
+        </div>
+
+        <!-- SEMINAR REGISTRATION MODAL -->
+        <div id="seminar-modal" class="seminar-modal-overlay" onclick="if(event.target===this) closeSeminarModal()">
+            <div class="seminar-modal-card">
+                <h3>📋 Add Seminar Registration</h3>
+                <div class="sm-sub">Manually register a student for the upcoming Kaksha Kendra seminar.</div>
+
+                <div class="seminar-field">
+                    <label>Full Name *</label>
+                    <input type="text" id="sm-naam" placeholder="e.g. Ankush Sharma" required />
+                </div>
+                <div class="seminar-field">
+                    <label>Class *</label>
+                    <input type="text" id="sm-class" placeholder="e.g. Class 12" required />
+                </div>
+                <div class="seminar-field">
+                    <label>Father's Name *</label>
+                    <input type="text" id="sm-father" placeholder="e.g. Ramesh Sharma" required />
+                </div>
+                <div class="seminar-field">
+                    <label>Mobile Number *</label>
+                    <input type="tel" id="sm-mobile" placeholder="e.g. 9876543210" required />
+                </div>
+                <div class="seminar-field">
+                    <label>Alternate Mobile</label>
+                    <input type="tel" id="sm-alt" placeholder="Family member's number" />
+                </div>
+                <div class="seminar-field">
+                    <label>Address *</label>
+                    <input type="text" id="sm-address" placeholder="Village/Mohalla, City, PIN" required />
+                </div>
+                <div class="seminar-field">
+                    <label>WhatsApp No (optional)</label>
+                    <input type="tel" id="sm-wa" placeholder="If different from mobile" />
+                </div>
+
+                <div id="sm-error" style="color:#ef4444;font-size:12px;margin-bottom:8px;display:none;"></div>
+
+                <div class="seminar-modal-actions">
+                    <button type="button" class="sm-cancel" onclick="closeSeminarModal()">Cancel</button>
+                    <button type="button" class="sm-save" onclick="submitSeminarForm()" id="sm-submit-btn">
+                        ✅ Save to Google Sheet
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- NEW OFFLINE LEAD MODAL -->
@@ -4100,6 +4277,41 @@ def admin_api_pending_panel(user: dict = Depends(verify_user)):
     without reloading the page or wiping any typed content."""
     html = _render_pending_leads_panel()
     return {"html": html}
+
+
+@app.post("/admin/api/seminar-add")
+async def admin_api_seminar_add(request: Request, user: dict = Depends(verify_user)):
+    """Manual seminar registration entry from the dashboard form.
+    Forwards data to Google Apps Script (SEMINAR_SHEET_URL) with source='Manual'."""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Invalid request body"}
+
+    sheet_url = os.getenv("SEMINAR_SHEET_URL", "").strip()
+    if not sheet_url:
+        return {"ok": False, "error": "SEMINAR_SHEET_URL not configured in Railway env vars"}
+
+    payload = {
+        "whatsapp":    body.get("whatsapp", ""),
+        "naam":        body.get("naam", ""),
+        "class_label": body.get("class_label", ""),
+        "father_name": body.get("father_name", ""),
+        "mobile":      body.get("mobile", ""),
+        "alt_mobile":  body.get("alt_mobile", ""),
+        "address":     body.get("address", ""),
+        "source":      "Manual",   # ← marks this as a manual entry in the sheet
+    }
+
+    try:
+        import httpx
+        resp = httpx.post(sheet_url, json=payload, timeout=10)
+        resp.raise_for_status()
+        print(f"[SeminarManual] Entry added by {user.get('username')} — {payload.get('naam')}")
+        return {"ok": True}
+    except Exception as e:
+        print(f"[SeminarManual] Google Sheet push failed: {e}")
+        return {"ok": False, "error": str(e)}
 
 
 # ============================================================
