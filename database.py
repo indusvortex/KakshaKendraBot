@@ -94,7 +94,82 @@ def init_db():
                 last_reminder_at DATETIME
             )
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS seminar_registrations (
+                sender_id       TEXT PRIMARY KEY,
+                step            TEXT DEFAULT 'seminar_name',
+                naam            TEXT,
+                class_label     TEXT,
+                father_name     TEXT,
+                mobile          TEXT,
+                alt_mobile      TEXT,
+                address         TEXT,
+                registered_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at    DATETIME
+            )
+        ''')
         conn.commit()
+
+
+# ============================================================
+# Seminar Registration — conversational form helpers
+# ============================================================
+
+def start_seminar_registration(sender_id: str):
+    """Creates/resets a seminar registration record and sets step to ask for name."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''
+            INSERT INTO seminar_registrations (sender_id, step, naam, class_label, father_name, mobile, alt_mobile, address, registered_at, completed_at)
+            VALUES (?, 'seminar_name', NULL, NULL, NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP, NULL)
+            ON CONFLICT(sender_id) DO UPDATE SET
+                step          = 'seminar_name',
+                naam          = NULL,
+                class_label   = NULL,
+                father_name   = NULL,
+                mobile        = NULL,
+                alt_mobile    = NULL,
+                address       = NULL,
+                registered_at = CURRENT_TIMESTAMP,
+                completed_at  = NULL
+        ''', (sender_id,))
+        conn.commit()
+
+
+def get_seminar_state(sender_id: str) -> dict | None:
+    """Returns the current seminar registration record, or None if not in a flow."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM seminar_registrations WHERE sender_id = ? AND completed_at IS NULL",
+            (sender_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_seminar_field(sender_id: str, field: str, value: str, next_step: str):
+    """Saves one field and advances the step. next_step='seminar_done' marks completion."""
+    with sqlite3.connect(DB_PATH) as conn:
+        if next_step == 'seminar_done':
+            conn.execute(
+                f"UPDATE seminar_registrations SET {field}=?, step=?, completed_at=CURRENT_TIMESTAMP WHERE sender_id=?",
+                (value, next_step, sender_id)
+            )
+        else:
+            conn.execute(
+                f"UPDATE seminar_registrations SET {field}=?, step=? WHERE sender_id=?",
+                (value, next_step, sender_id)
+            )
+        conn.commit()
+
+
+def get_completed_seminar_registrations() -> list:
+    """Returns all completed registrations (for admin review)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM seminar_registrations WHERE completed_at IS NOT NULL ORDER BY completed_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ============================================================

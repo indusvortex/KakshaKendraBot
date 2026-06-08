@@ -1145,7 +1145,145 @@ async def handle_whatsapp_message(request: Request):
                                 print(f"[BounceBackDrip] +{sender_id} said Not Yet — reminders will continue")
                                 continue  # skip AI
 
+                            # ================================================================
+                            # SEMINAR REGISTRATION — Step 0: student selects from menu
+                            # ================================================================
+                            _seminar_triggers = {
+                                "📋 seminar registration", "seminar registration",
+                                "seminar", "seminar reg", "register seminar"
+                            }
+                            if _msg_stripped in _seminar_triggers:
+                                database.save_message(sender_id, "user", message_text)
+                                database.start_seminar_registration(sender_id)
+                                welcome_msg = (
+                                    "🎓 *Seminar Registration — Kaksha Kendra*\n\n"
+                                    "Rajat Sir ke upcoming seminar ke liye aapka swagat hai! 🙏\n\n"
+                                    "Hamare team member aapko seminar ki poori details ke saath *call karenge*.\n\n"
+                                    "Pehle, aapki thodi si details chahiye — yeh sirf *2 minute* ka kaam hai! ✨\n\n"
+                                    "━━━━━━━━━━━━━━━━━━━━\n"
+                                    "👤 *Step 1/6 — Aapka poora naam kya hai?*"
+                                )
+                                send_whatsapp_message(sender_id, welcome_msg)
+                                database.save_message(sender_id, "assistant", welcome_msg)
+                                print(f"[Seminar] Registration started for +{sender_id}")
+                                continue  # skip AI
+
+                            # ================================================================
+                            # SEMINAR REGISTRATION — Steps 1–6: collect fields one by one
+                            # ================================================================
+                            _seminar_state = database.get_seminar_state(sender_id)
+                            if _seminar_state:
+                                step = _seminar_state.get("step", "")
+                                val = message_text.strip()
+                                database.save_message(sender_id, "user", message_text)
+
+                                if step == "seminar_name":
+                                    database.update_seminar_field(sender_id, "naam", val, "seminar_class")
+                                    reply = (
+                                        f"✅ Shukriya, *{val}*!\n\n"
+                                        "━━━━━━━━━━━━━━━━━━━━\n"
+                                        "📚 *Step 2/6 — Aap kis class mein hain?*\n"
+                                        "_(e.g. Class 9, Class 10, Class 12)_"
+                                    )
+
+                                elif step == "seminar_class":
+                                    database.update_seminar_field(sender_id, "class_label", val, "seminar_father")
+                                    reply = (
+                                        "✅ Note kar liya!\n\n"
+                                        "━━━━━━━━━━━━━━━━━━━━\n"
+                                        "👨 *Step 3/6 — Aapke pita ji ka naam?*"
+                                    )
+
+                                elif step == "seminar_father":
+                                    database.update_seminar_field(sender_id, "father_name", val, "seminar_mobile")
+                                    reply = (
+                                        "✅ Perfect!\n\n"
+                                        "━━━━━━━━━━━━━━━━━━━━\n"
+                                        "📱 *Step 4/6 — Aapka mobile number?*\n"
+                                        "_(Jis number par call chahiye)_"
+                                    )
+
+                                elif step == "seminar_mobile":
+                                    database.update_seminar_field(sender_id, "mobile", val, "seminar_alt_mobile")
+                                    reply = (
+                                        "✅ Saved!\n\n"
+                                        "━━━━━━━━━━━━━━━━━━━━\n"
+                                        "📞 *Step 5/6 — Ek alternate mobile number dijiye*\n"
+                                        "_(Koi bhi family member ka — in case aap unavailable hon)_"
+                                    )
+
+                                elif step == "seminar_alt_mobile":
+                                    database.update_seminar_field(sender_id, "alt_mobile", val, "seminar_address")
+                                    reply = (
+                                        "✅ Got it!\n\n"
+                                        "━━━━━━━━━━━━━━━━━━━━\n"
+                                        "🏠 *Step 6/6 — Aapka address?*\n"
+                                        "_(Gaon/Mohalla, City, PIN code)_"
+                                    )
+
+                                elif step == "seminar_address":
+                                    # Final step — save address and mark complete
+                                    database.update_seminar_field(sender_id, "address", val, "seminar_done")
+                                    st = database.get_seminar_state(sender_id) or _seminar_state
+                                    # Re-fetch to get all fields
+                                    import sqlite3 as _sql
+                                    with _sql.connect("whatsapp_bot.db") as _c:
+                                        _c.row_factory = _sql.Row
+                                        _row = _c.execute("SELECT * FROM seminar_registrations WHERE sender_id=?", (sender_id,)).fetchone()
+                                        _data = dict(_row) if _row else {}
+                                    _name     = _data.get("naam") or "—"
+                                    _cls      = _data.get("class_label") or "—"
+                                    _father   = _data.get("father_name") or "—"
+                                    _mob      = _data.get("mobile") or "—"
+                                    _alt      = _data.get("alt_mobile") or "—"
+
+                                    # Confirmation to student
+                                    reply = (
+                                        "🎉 *Registration Complete! Shukriya!*\n\n"
+                                        "Aapki details successfully save ho gayi hain:\n\n"
+                                        f"👤 Naam: *{_name}*\n"
+                                        f"📚 Class: *{_cls}*\n"
+                                        f"👨 Pita ji: *{_father}*\n"
+                                        f"📱 Mobile: *{_mob}*\n"
+                                        f"📞 Alt Mobile: *{_alt}*\n"
+                                        f"🏠 Address: *{val}*\n\n"
+                                        "━━━━━━━━━━━━━━━━━━━━\n"
+                                        "✅ Hamare team member aapko *seminar ki poori details ke saath jald call karenge!*\n\n"
+                                        "Koi sawaal ho toh hume WhatsApp karo. 😊\n"
+                                        "*Kaksha Kendra — Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨*"
+                                    )
+
+                                    # Notify admin
+                                    _admin_nums = os.getenv("ADMIN_NOTIFY_NUMBER", "").strip()
+                                    if _admin_nums:
+                                        _admin_msg = (
+                                            "📋 *NEW SEMINAR REGISTRATION!*\n\n"
+                                            f"👤 Naam: {_name}\n"
+                                            f"📚 Class: {_cls}\n"
+                                            f"👨 Pita ji: {_father}\n"
+                                            f"📱 Mobile: {_mob}\n"
+                                            f"📞 Alt Mobile: {_alt}\n"
+                                            f"🏠 Address: {val}\n"
+                                            f"💬 WhatsApp: +{sender_id}\n\n"
+                                            "📞 *Please call to confirm seminar details!*"
+                                        )
+                                        _whatsapp_broadcast(_admin_nums, _admin_msg, label="SeminarReg")
+                                    print(f"[Seminar] Registration complete for +{sender_id} — admin notified")
+
+                                else:
+                                    # Unknown step — restart gracefully
+                                    reply = (
+                                        "Oops! Kuch gadbad ho gayi. 😅\n"
+                                        "Chaliye dobara shuru karte hain — aapka naam kya hai?"
+                                    )
+                                    database.start_seminar_registration(sender_id)
+
+                                send_whatsapp_message(sender_id, reply)
+                                database.save_message(sender_id, "assistant", reply)
+                                continue  # skip AI — form handles everything
+
                             # ----- Special intercept: On-screen copy / answer sheet issues -----
+
                             # If a student asks about on-screen copy, answer re-evaluation,
                             # or marking/checking issues, direct them to the email.
                             _osc_keywords = [
