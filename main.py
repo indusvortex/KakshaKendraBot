@@ -1084,40 +1084,14 @@ async def handle_whatsapp_message(request: Request):
                                     continue  # skip the AI step
                                 print(f"[Template] Falling back to AI for 'Call Us' (template failed)")
 
-                            # ----- Special intercept: Bounce Back Batch selection → send message + start drip -----
-                            # NOTE: CTA URL buttons don't send replies to the bot (they just open the URL).
-                            # So we trigger the drip when the student selects "Bounce Back Batch" from the menu,
-                            # which IS a list/button reply we receive. We send the message directly (skip AI)
-                            # and start the 30s drip timer right away.
+                            # ----- Smart intent detection: auto-route to Bounce Back / Brahmastra / Seminar -----
+                            # Detects: exact menu picks, natural language intent, AND pre-filled ad messages
                             _msg_stripped = message_text.strip().lower()
-                            _bb_triggers = {
-                                "🔥 bounce back batch", "bounce back batch",
-                                "bounce back", "bounceback batch", "bounceback"
-                            }
-                            if _msg_stripped in _bb_triggers:
-                                database.save_message(sender_id, "user", message_text)
-                                # Send the Bounce Back message directly (not via AI)
-                                bb_msg = (
-                                    "🔥 BOUNCE BACK BATCH — CBSE Board 2026 RT Students\n\n"
-                                    "\"Fail nahi hone dunga!\" — Rajat Sir\n\n"
-                                    "Agar Maths mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. "
-                                    "Yeh batch sirf Maths RT students ke liye hai — yeh aapka sabse bada comeback hoga! 🎯\n\n"
-                                    "✅ Zero se padhai, har concept clear hoga ✨\n"
-                                    "✅ Sirf wahi padhenge jo RT exam mein aayega\n"
-                                    "✅ Rajat Sir ki guarantee — 100% Pass!\n\n"
-                                    "Aaj hi enroll karo! 👇\n"
-                                    "[CTA_URL display=\"🚀 Enroll Now\" url=\"https://www.kakshakendra.com/bounceback--12\"]"
-                                )
-                                send_whatsapp_message(sender_id, bb_msg)
-                                database.save_message(sender_id, "assistant", bb_msg)
-                                # Start the 30s → promo → 60s → YES/NO drip
-                                database.start_bounce_back_drip(sender_id)
-                                import asyncio as _asyncio
-                                _asyncio.create_task(_bounce_back_drip_task(sender_id))
-                                print(f"[BounceBackDrip] Drip started for +{sender_id} (triggered by batch selection)")
-                                continue  # skip AI
 
-                            # ----- Special intercept: Bounce Back Drip — student says "Yes, Purchased" -----
+                            # ================================================================
+                            # BOUNCE BACK DRIP — Yes Purchased / Not Yet responses
+                            # (Must be checked BEFORE batch triggers to avoid false matches)
+                            # ================================================================
                             if _msg_stripped in {"✅ yes, i purchased!", "yes, i purchased!", "yes purchased", "yes i purchased"}:
                                 database.save_message(sender_id, "user", message_text)
                                 database.mark_bounce_back_purchased(sender_id)
@@ -1132,7 +1106,6 @@ async def handle_whatsapp_message(request: Request):
                                 print(f"[BounceBackDrip] +{sender_id} confirmed purchase ✅")
                                 continue  # skip AI
 
-                            # ----- Special intercept: Bounce Back Drip — student says "Not Yet" -----
                             if _msg_stripped in {"❌ not yet", "not yet"}:
                                 database.save_message(sender_id, "user", message_text)
                                 not_yet_msg = (
@@ -1146,13 +1119,109 @@ async def handle_whatsapp_message(request: Request):
                                 continue  # skip AI
 
                             # ================================================================
-                            # SEMINAR REGISTRATION — Step 0: student selects from menu
+                            # BOUNCE BACK BATCH — exact + intent triggers
                             # ================================================================
-                            _seminar_triggers = {
+                            _bb_exact = {
+                                "🔥 bounce back batch", "bounce back batch",
+                                "bounce back", "bounceback batch", "bounceback"
+                            }
+                            _bb_intent_kw = [
+                                "rt batch", "rt course", "rt class", "rt exam",
+                                "re test", "retest", "re-test",
+                                "fail ho gaya", "fail hogaya", "fail hua",
+                                "maths mein fail", "math mein fail",
+                                "compartment", "supplementary",
+                                "pass hona hai", "pass kaise",
+                                "bounce back kya", "bounce back batao",
+                                "bounce back details", "bounce back fee",
+                            ]
+                            _is_bb = (_msg_stripped in _bb_exact or
+                                      any(kw in _msg_stripped for kw in _bb_intent_kw))
+                            if _is_bb:
+                                database.save_message(sender_id, "user", message_text)
+                                bb_msg = (
+                                    "🔥 BOUNCE BACK BATCH — CBSE Board 2026 RT Students\n\n"
+                                    "\"Fail nahi hone dunga!\" — Rajat Sir\n\n"
+                                    "Agar Maths mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. "
+                                    "Yeh batch sirf Maths RT students ke liye hai — yeh aapka sabse bada comeback hoga! 🎯\n\n"
+                                    "✅ Zero se padhai, har concept clear hoga ✨\n"
+                                    "✅ Sirf wahi padhenge jo RT exam mein aayega\n"
+                                    "✅ Rajat Sir ki guarantee — 100% Pass!\n\n"
+                                    "Aaj hi enroll karo! 👇\n"
+                                    "[CTA_URL display=\"🚀 Enroll Now\" url=\"https://www.kakshakendra.com/bounceback--12\"]"
+                                )
+                                send_whatsapp_message(sender_id, bb_msg)
+                                database.save_message(sender_id, "assistant", bb_msg)
+                                database.start_bounce_back_drip(sender_id)
+                                import asyncio as _asyncio
+                                _asyncio.create_task(_bounce_back_drip_task(sender_id))
+                                print(f"[BounceBackDrip] Drip started for +{sender_id} (intent: '{_msg_stripped[:40]}')")
+                                continue  # skip AI
+
+                            # ================================================================
+                            # BRAHMASTRA BATCH — exact + intent triggers
+                            # ================================================================
+                            _bm_exact = {
+                                "⚡ brahmastra batch", "brahmastra batch",
+                                "brahmastra", "brahmstra", "brahmastr"
+                            }
+                            _bm_intent_kw = [
+                                "calculation speed", "calculation trick",
+                                "basics strong", "basics weak", "basic weak",
+                                "foundation fix", "foundation weak",
+                                "maths basics", "math basics",
+                                "speed badhao", "speed improve",
+                                "brahmastra kya", "brahmastra batao",
+                                "brahmastra details", "brahmastra fee",
+                                "academic comeback",
+                            ]
+                            _is_bm = (_msg_stripped in _bm_exact or
+                                      any(kw in _msg_stripped for kw in _bm_intent_kw))
+                            if _is_bm:
+                                database.save_message(sender_id, "user", message_text)
+                                bm_msg = (
+                                    "⚡ BRAHMASTRA: THE ACADEMIC COMEBACK\n\n"
+                                    "\"Master the Core. Dominate the Score!\"\n"
+                                    "\"Calculation ki speed badhao, Basics mazboot karo!\"\n\n"
+                                    "This batch is specifically designed for students who want to fix their "
+                                    "foundation from the roots and permanently eliminate the fear of Math and "
+                                    "Science numericals. 🧠\n\n"
+                                    "✅ Smart Weightage & fast option-elimination tricks\n"
+                                    "✅ Basics rebuilt from Level 0 to Level 3\n"
+                                    "✅ Rajat Sir's proven 'Oral to Written Drill' method\n\n"
+                                    "Start your Academic Comeback today 👇\n"
+                                    "[CTA_URL display=\"🚀 Enroll Now\" url=\"https://courses.kakshakendra.com/courses/BRAHMASTRA-THE-ACADEMIC-COMEBACK-6a0b52bd4dd0758ae8c1691d\"]"
+                                )
+                                send_whatsapp_message(sender_id, bm_msg)
+                                database.save_message(sender_id, "assistant", bm_msg)
+                                print(f"[Brahmastra] Direct message sent to +{sender_id} (intent: '{_msg_stripped[:40]}')")
+                                continue  # skip AI
+
+                            # ================================================================
+                            # SEMINAR REGISTRATION — exact + intent + ad pre-fill triggers
+                            # Ad pre-fill examples:
+                            #   "Hi Rajat Sir! Please reserve my spot for the upcoming Free Seminar. ✨"
+                            #   "I want to register for the seminar"
+                            # ================================================================
+                            _sem_exact = {
                                 "📋 seminar registration", "seminar registration",
                                 "seminar", "seminar reg", "register seminar"
                             }
-                            if _msg_stripped in _seminar_triggers:
+                            _sem_intent_kw = [
+                                "seminar kab", "seminar date", "seminar time",
+                                "seminar register", "seminar join",
+                                "seminar details", "seminar mein",
+                                "seminar ke liye", "register for seminar",
+                                "seminar attend",
+                                # Pre-filled ad message keywords
+                                "reserve my spot", "reserve spot",
+                                "free seminar", "upcoming seminar",
+                                "spot for the", "spot for seminar",
+                                "seminar ke liye register", "seminar booking",
+                            ]
+                            _is_sem = (_msg_stripped in _sem_exact or
+                                       any(kw in _msg_stripped for kw in _sem_intent_kw))
+                            if _is_sem:
                                 database.save_message(sender_id, "user", message_text)
                                 database.start_seminar_registration(sender_id)
                                 welcome_msg = (
@@ -1165,8 +1234,9 @@ async def handle_whatsapp_message(request: Request):
                                 )
                                 send_whatsapp_message(sender_id, welcome_msg)
                                 database.save_message(sender_id, "assistant", welcome_msg)
-                                print(f"[Seminar] Registration started for +{sender_id}")
+                                print(f"[Seminar] Registration started for +{sender_id} (intent: '{_msg_stripped[:40]}')")
                                 continue  # skip AI
+
 
                             # ================================================================
                             # SEMINAR REGISTRATION — Steps 1–6: collect fields one by one
