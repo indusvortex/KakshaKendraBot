@@ -798,8 +798,14 @@ async def lifespan(app: FastAPI):
     finally:
         task.cancel()
 
+from fastapi.responses import FileResponse
+
 app = FastAPI(title="WhatsApp AI Coach Bot", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse("static/favicon.png")
 
 @app.exception_handler(NotAuthenticatedException)
 def auth_exception_handler(request: Request, exc: NotAuthenticatedException):
@@ -815,6 +821,7 @@ def login_page(request: Request, error: str = "", success: str = ""):
     <head>
         <title>Login - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" type="image/png" href="/static/favicon.png">
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: radial-gradient(ellipse at 0% 0%, rgba(82,136,193,0.18) 0%, transparent 45%), radial-gradient(ellipse at 100% 100%, rgba(217,70,170,0.10) 0%, transparent 45%), radial-gradient(ellipse at 50% 50%, rgba(16,185,129,0.05) 0%, transparent 50%), linear-gradient(135deg, #0a1320 0%, #0e1621 50%, #14202d 100%); background-attachment: fixed; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e6edf3; overflow: hidden; }}
             .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
@@ -882,6 +889,7 @@ def forgot_password_page(request: Request, error: str = ""):
     <head>
         <title>Forgot Password - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" type="image/png" href="/static/favicon.png">
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: radial-gradient(ellipse at 0% 0%, rgba(82,136,193,0.18) 0%, transparent 45%), radial-gradient(ellipse at 100% 100%, rgba(217,70,170,0.10) 0%, transparent 45%), radial-gradient(ellipse at 50% 50%, rgba(16,185,129,0.05) 0%, transparent 50%), linear-gradient(135deg, #0a1320 0%, #0e1621 50%, #14202d 100%); background-attachment: fixed; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e6edf3; overflow: hidden; }}
             .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
@@ -2653,6 +2661,7 @@ def admin_dashboard(
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <meta name="theme-color" content="#5288c1"/>
+        <link rel="icon" type="image/png" href="/static/favicon.png">
         <link rel="manifest" href="/manifest.json"/>
         <meta name="mobile-web-app-capable" content="yes"/>
         <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3501,6 +3510,7 @@ def admin_settings(user: str = Depends(verify_admin)):
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <meta name="theme-color" content="#5288c1"/>
+        <link rel="icon" type="image/png" href="/static/favicon.png">
         <link rel="manifest" href="/manifest.json"/>
         <meta http-equiv="refresh" content="30">
         <style>{_ADMIN_CSS}
@@ -4207,9 +4217,9 @@ def manifest():
         "orientation": "portrait",
         "icons": [
             {
-                "src": "/favicon.ico",
+                "src": "/static/favicon.png",
                 "sizes": "any",
-                "type": "image/x-icon",
+                "type": "image/png",
                 "purpose": "any",
             },
         ],
