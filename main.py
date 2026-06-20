@@ -2818,9 +2818,60 @@ def admin_dashboard(
             }}
             document.addEventListener('click', ensurePermission, {{ once: true }});
 
-            // Step 2 — Poll for new students and unseen messages every 15 seconds
+            // Step 2 — Poll for new students and unseen messages every 5 seconds
             async function pollNewChats() {{
                 try {{
+                    const currentChatId = new URLSearchParams(window.location.search).get('chat') || '';
+
+                    // 1. Fetch conversations list HTML and unread counts
+                    const resList = await fetch('/admin/api/conversations-list?chat=' + currentChatId, {{ credentials: 'include' }});
+                    if (resList.ok) {{
+                        const dataList = await resList.json();
+                        const chatListEl = document.getElementById('chat-list');
+                        if (chatListEl && chatListEl.innerHTML !== dataList.html) {{
+                            chatListEl.innerHTML = dataList.html;
+                            // Apply search filter if user is searching
+                            const searchVal = document.getElementById('search')?.value;
+                            if (searchVal) {{
+                                filterChats(searchVal);
+                            }}
+                        }}
+                        const titleEl = document.querySelector('.sidebar-title');
+                        if (titleEl) {{
+                            titleEl.innerHTML = '🎓 Kaksha Kendra Bot ' + dataList.unread_html;
+                        }}
+                    }}
+
+                    // 2. Fetch message bubbles if viewing a specific chat
+                    if (currentChatId) {{
+                        const resMsgs = await fetch('/admin/api/chat-messages/' + currentChatId, {{ credentials: 'include' }});
+                        if (resMsgs.ok) {{
+                            const dataMsgs = await resMsgs.json();
+                            const msgsEl = document.getElementById('messages');
+                            if (msgsEl) {{
+                                const oldScrollHeight = msgsEl.scrollHeight;
+                                const oldScrollTop = msgsEl.scrollTop;
+                                const oldClientHeight = msgsEl.clientHeight;
+                                // Scroll buffer
+                                const isAtBottom = (oldScrollHeight - oldScrollTop - oldClientHeight) < 15;
+
+                                if (msgsEl.innerHTML !== dataMsgs.html) {{
+                                    msgsEl.innerHTML = dataMsgs.html;
+
+                                    const subHeaderEl = document.querySelector('.main-header .sub');
+                                    if (subHeaderEl) {{
+                                        subHeaderEl.textContent = dataMsgs.sub_title;
+                                    }}
+
+                                    if (isAtBottom) {{
+                                        msgsEl.scrollTop = msgsEl.scrollHeight;
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+
+                    // 3. Keep showing browser notifications if new unread messages arrive
                     const res = await fetch('/admin/api/conversations', {{ credentials: 'include' }});
                     if (!res.ok) return;
                     const data = await res.json();
@@ -2832,7 +2883,10 @@ def admin_dashboard(
                         const lastActive = chat.last_active;
                         const seenAt = lastSeen[chat.sender_id];
                         if (chat.unread && (!seenAt || seenAt < lastActive)) {{
-                            // New unread message we haven't notified about yet
+                            // Skip notification if we are already viewing the active chat
+                            if (chat.sender_id === currentChatId) {{
+                                continue;
+                            }}
                             const isNewLead = !seenAt;
                             const title = isNewLead
                                 ? '🔔 NEW STUDENT messaged Kaksha Kendra Bot'
@@ -2901,9 +2955,9 @@ def admin_dashboard(
                 }}
             }});
 
-            // Start polling immediately + every 15 seconds
+            // Start polling immediately + every 5 seconds
             pollNewChats();
-            setInterval(pollNewChats, 15000);
+            setInterval(pollNewChats, 5000);
 
             // ============================================================
             // SILENT PENDING PANEL REFRESH — every 30s, skips if typing
@@ -4342,6 +4396,96 @@ def call_redirect(number: str):
 def admin_api_conversations(user: dict = Depends(verify_user)):
     """JSON endpoint listing all conversations."""
     return {"conversations": database.get_all_conversations()}
+
+
+@app.get("/admin/api/conversations-list")
+def admin_api_conversations_list(chat: str = "", user: dict = Depends(verify_user)):
+    """Returns the latest chat list sidebar items HTML and unread count for silent refresh."""
+    conversations = database.get_all_conversations()
+    unread_count = sum(1 for c in conversations if c.get("unread"))
+    
+    items = []
+    for c in conversations:
+        is_active = c["sender_id"] == chat
+        raw_msg = c["last_message"] or ""
+        clean_text, _btns = _clean_message_text(raw_msg)
+        preview = clean_text[:50].replace("<", "&lt;").replace(">", "&gt;")
+        if len(clean_text) > 50:
+            preview += "…"
+        prefix = "🤖 " if c["last_role"] == "assistant" else ""
+        if c["last_role"] == "assistant" and raw_msg.startswith("[ADMIN] "):
+            prefix = "✓ "
+
+        time_str = to_ist(c["last_active"], "%I:%M %p")
+        new_dot = f'<span class="new-dot">!</span>' if c.get("unread") else ''
+
+        display_name = c.get("display_name") or "Unknown"
+        items.append(f"""
+        <div class="chat-item {'active' if is_active else ''}" onclick="window.location='/admin?chat={c['sender_id']}'" data-search="{display_name.lower()} {c['sender_id']}">
+            {_avatar_html(display_name, c['sender_id'], 50)}
+            <div class="info">
+                <div class="name"><span>{display_name}</span><span class="time">{time_str}</span></div>
+                <div class="preview"><span style="overflow:hidden;text-overflow:ellipsis">{prefix}{preview}</span>{new_dot}</div>
+            </div>
+        </div>
+        """)
+
+    items_html = "".join(items) or '<div style="text-align:center;padding:40px;color:#7d8e9c">No conversations yet.</div>'
+    unread_html = f'<span class="unread-pill">{unread_count} new</span>' if unread_count > 0 else ''
+    return {"html": items_html, "unread_html": unread_html, "unread_count": unread_count}
+
+
+@app.get("/admin/api/chat-messages/{sender_id}")
+def admin_api_chat_messages(sender_id: str, user: dict = Depends(verify_user)):
+    """Returns the message bubbles HTML and metadata for the given sender_id."""
+    messages = database.get_full_conversation(sender_id)
+    conversations = database.get_all_conversations()
+    chat_info = next((c for c in conversations if c["sender_id"] == sender_id), {})
+    display_name = chat_info.get("display_name") or "Unknown"
+
+    bubbles = []
+    for msg in messages:
+        is_user = msg["role"] == "user"
+        is_admin_msg = msg["content"].startswith("[ADMIN] ")
+        raw = msg["content"][8:] if is_admin_msg else msg["content"]
+
+        if is_user:
+            row_class, bubble_class, label = "right", "student", "Student"
+            clean_text, btns = raw, []
+        elif is_admin_msg:
+            row_class, bubble_class, label = "", "admin", "You (manual)"
+            clean_text, btns = raw, []
+        else:
+            row_class, bubble_class, label = "", "bot", "Bot"
+            clean_text, btns = _clean_message_text(raw)
+
+        content = clean_text.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        chips_html = ""
+        if btns:
+            chips_html = '<div class="chips">' + "".join(
+                f'<span class="chip">{b[:40].replace("<","&lt;").replace(">","&gt;")}</span>'
+                for b in btns
+            ) + "</div>"
+
+        ts = to_ist(msg['timestamp'], "%d %b · %I:%M %p")
+        bubbles.append(f"""
+        <div class="bubble-row {row_class}">
+            <div class="bubble {bubble_class}">
+                <div class="meta">{label}</div>
+                <div class="content">{content}</div>
+                {chips_html}
+                <div class="time">{ts}</div>
+            </div>
+        </div>
+        """)
+
+    bubbles_html = "".join(bubbles) or '<div style="text-align:center;color:#7d8e9c;padding:40px">No messages yet.</div>'
+    sub_title = f"+{sender_id} · {len(messages)} messages"
+    
+    # Also mark as read since admin is actively polling this chat
+    database.mark_chat_read(sender_id)
+    
+    return {"html": bubbles_html, "sub_title": sub_title, "message_count": len(messages)}
 
 
 @app.get("/admin/api/pending-panel")
