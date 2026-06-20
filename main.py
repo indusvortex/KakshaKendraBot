@@ -22,6 +22,8 @@ from utils import (
     send_whatsapp_media,
     ai_stats,
     _get_groq_clients,
+    DEFAULT_TEMPLATES,
+    get_system_instruction,
 )
 
 # India Standard Time = UTC+5:30
@@ -622,14 +624,7 @@ async def _bounce_back_drip_task(sender_id: str):
     record = database.get_bounce_back_record(sender_id)
     if not record or record.get("purchased"):
         return  # Student already purchased or record gone
-    promo_msg = (
-        "🤔 *Still thinking? Humara special offer sirf aapke liye!*\n\n"
-        "Apply Promo Code at checkout:\n\n"
-        "🎟️ *RTCLASS12*\n\n"
-        "Get *FLAT ₹1000/- OFF!* 🎉\n"
-        "Original Price: ~~₹2499~~ → *Only ₹1499/-*\n\n"
-        "Offer limited — enroll abhi! 👇"
-    )
+    promo_msg = database.get_state("tpl_bb_drip_promo_text", DEFAULT_TEMPLATES["tpl_bb_drip_promo_text"])
     send_whatsapp_message(sender_id, promo_msg)
     database.save_message(sender_id, "assistant", promo_msg)
     database.mark_bounce_back_promo_sent(sender_id)
@@ -640,13 +635,7 @@ async def _bounce_back_drip_task(sender_id: str):
     record = database.get_bounce_back_record(sender_id)
     if not record or record.get("purchased"):
         return
-    check_msg = (
-        "📋 Kya aapne course purchase kar liya?\n\n"
-        "[OPTIONS]\n"
-        "✅ Yes, I Purchased!\n"
-        "❌ Not Yet\n"
-        "[/OPTIONS]"
-    )
+    check_msg = database.get_state("tpl_bb_drip_check_text", DEFAULT_TEMPLATES["tpl_bb_drip_check_text"])
     send_whatsapp_message(sender_id, check_msg)
     database.save_message(sender_id, "assistant", check_msg)
     database.mark_bounce_back_check_sent(sender_id)
@@ -762,17 +751,8 @@ async def reminder_loop():
                 sid = drip["sender_id"]
                 try:
                     reminder_num = drip["reminder_count"] + 1
-                    reminder_msg = (
-                        f"🔥 *Bounce Back Batch — Reminder #{reminder_num}*\n\n"
-                        "\"Fail nahi hone dunga!\" — Rajat Sir\n\n"
-                        "✅ Zero se padhai, har concept clear hoga ✨\n"
-                        "✅ Sirf wahi padhenge jo RT exam mein aayega\n"
-                        "✅ Rajat Sir ki guarantee — 100% Pass!\n\n"
-                        "💰 *Discounted Fee: Sirf ₹1499/-*\n"
-                        "(Use code *RTCLASS12* at checkout)\n\n"
-                        "Aaj hi enroll karo! 👇\n"
-                        "https://www.kakshakendra.com/bounceback--12"
-                    )
+                    raw_rem = database.get_state("tpl_bb_drip_reminder_text", DEFAULT_TEMPLATES["tpl_bb_drip_reminder_text"])
+                    reminder_msg = raw_rem.replace("{reminder_num}", str(reminder_num))
                     send_whatsapp_message(sid, reminder_msg)
                     database.save_message(sid, "assistant", reminder_msg)
                     database.mark_bounce_back_reminder_sent(sid)
@@ -1103,12 +1083,7 @@ async def handle_whatsapp_message(request: Request):
                             if _msg_stripped in {"✅ yes, i purchased!", "yes, i purchased!", "yes purchased", "yes i purchased"}:
                                 database.save_message(sender_id, "user", message_text)
                                 database.mark_bounce_back_purchased(sender_id)
-                                congrats = (
-                                    "🎉 *Congratulations! Welcome to Bounce Back Batch!*\n\n"
-                                    "Rajat Sir ka promise hai — *Fail nahi hone dunga!* 💪\n\n"
-                                    "Course access ke liye apna registered email check karo.\n"
-                                    "Koi bhi problem ho toh hume WhatsApp karo! 😊"
-                                )
+                                congrats = database.get_state("tpl_bb_yes_purchased_text", DEFAULT_TEMPLATES["tpl_bb_yes_purchased_text"])
                                 send_whatsapp_message(sender_id, congrats)
                                 database.save_message(sender_id, "assistant", congrats)
                                 print(f"[BounceBackDrip] +{sender_id} confirmed purchase ✅")
@@ -1116,11 +1091,7 @@ async def handle_whatsapp_message(request: Request):
 
                             if _msg_stripped in {"❌ not yet", "not yet"}:
                                 database.save_message(sender_id, "user", message_text)
-                                not_yet_msg = (
-                                    "No worries! 😊 Hum samjhte hain.\n\n"
-                                    "Yaad rakhna — *RTCLASS12* promo code use karke sirf *₹1499/-* mein enroll kar sakte ho! 🎟️\n\n"
-                                    "Hum thodi der baad aapko remind kar denge. 🔔"
-                                )
+                                not_yet_msg = database.get_state("tpl_bb_not_yet_text", DEFAULT_TEMPLATES["tpl_bb_not_yet_text"])
                                 send_whatsapp_message(sender_id, not_yet_msg)
                                 database.save_message(sender_id, "assistant", not_yet_msg)
                                 print(f"[BounceBackDrip] +{sender_id} said Not Yet — reminders will continue")
@@ -1147,17 +1118,9 @@ async def handle_whatsapp_message(request: Request):
                             _is_bb = any(kw in _msg_stripped for kw in _bb_keywords)
                             if _is_bb:
                                 database.save_message(sender_id, "user", message_text)
-                                bb_msg = (
-                                    "🔥 BOUNCE BACK BATCH — CBSE Board 2026 RT Students\n\n"
-                                    "\"Fail nahi hone dunga!\" — Rajat Sir\n\n"
-                                    "Agar Maths mein RT aaya hai, toh ab ghabrane ki zaroorat nahi. "
-                                    "Yeh batch sirf Maths RT students ke liye hai — yeh aapka sabse bada comeback hoga! 🎯\n\n"
-                                    "✅ Zero se padhai, har concept clear hoga ✨\n"
-                                    "✅ Sirf wahi padhenge jo RT exam mein aayega\n"
-                                    "✅ Rajat Sir ki guarantee — 100% Pass!\n\n"
-                                    "Aaj hi enroll karo! 👇\n"
-                                    "[CTA_URL display=\"🚀 Enroll Now\" url=\"https://www.kakshakendra.com/bounceback--12\"]"
-                                )
+                                bb_url = database.get_state("link_bounce_back_buy", DEFAULT_TEMPLATES["link_bounce_back_buy"])
+                                raw_bb = database.get_state("tpl_bounce_back_text", DEFAULT_TEMPLATES["tpl_bounce_back_text"])
+                                bb_msg = f"{raw_bb}\n[CTA_URL display=\"🚀 Enroll Now\" url=\"{bb_url}\"]"
                                 send_whatsapp_message(sender_id, bb_msg)
                                 database.save_message(sender_id, "assistant", bb_msg)
                                 database.start_bounce_back_drip(sender_id)
@@ -1186,19 +1149,9 @@ async def handle_whatsapp_message(request: Request):
                             _is_bm = any(kw in _msg_stripped for kw in _bm_keywords)
                             if _is_bm:
                                 database.save_message(sender_id, "user", message_text)
-                                bm_msg = (
-                                    "⚡ BRAHMASTRA: THE ACADEMIC COMEBACK\n\n"
-                                    "\"Master the Core. Dominate the Score!\"\n"
-                                    "\"Calculation ki speed badhao, Basics mazboot karo!\"\n\n"
-                                    "This batch is specifically designed for students who want to fix their "
-                                    "foundation from the roots and permanently eliminate the fear of Math and "
-                                    "Science numericals. 🧠\n\n"
-                                    "✅ Smart Weightage & fast option-elimination tricks\n"
-                                    "✅ Basics rebuilt from Level 0 to Level 3\n"
-                                    "✅ Rajat Sir's proven 'Oral to Written Drill' method\n\n"
-                                    "Start your Academic Comeback today 👇\n"
-                                    "[CTA_URL display=\"🚀 Enroll Now\" url=\"https://courses.kakshakendra.com/courses/BRAHMASTRA-THE-ACADEMIC-COMEBACK-6a0b52bd4dd0758ae8c1691d\"]"
-                                )
+                                bm_url = database.get_state("link_brahmastra_buy", DEFAULT_TEMPLATES["link_brahmastra_buy"])
+                                raw_bm = database.get_state("tpl_brahmastra_text", DEFAULT_TEMPLATES["tpl_brahmastra_text"])
+                                bm_msg = f"{raw_bm}\n[CTA_URL display=\"🚀 Enroll Now\" url=\"{bm_url}\"]"
                                 send_whatsapp_message(sender_id, bm_msg)
                                 database.save_message(sender_id, "assistant", bm_msg)
                                 print(f"[Brahmastra] Direct message sent to +{sender_id} (intent: '{_msg_stripped[:50]}')")
@@ -1230,14 +1183,7 @@ async def handle_whatsapp_message(request: Request):
                             if _is_sem:
                                 database.save_message(sender_id, "user", message_text)
                                 database.start_seminar_registration(sender_id)
-                                welcome_msg = (
-                                    "🎓 *Seminar Registration — Kaksha Kendra*\n\n"
-                                    "Rajat Sir ke upcoming seminar ke liye aapka swagat hai! 🙏\n\n"
-                                    "Hamare team member aapko seminar ki poori details ke saath *call karenge*.\n\n"
-                                    "Pehle, aapki thodi si details chahiye — yeh sirf *2 minute* ka kaam hai! ✨\n\n"
-                                    "━━━━━━━━━━━━━━━━━━━━\n"
-                                    "👤 *Step 1/6 — Aapka poora naam kya hai?*"
-                                )
+                                welcome_msg = database.get_state("tpl_seminar_step1_text", DEFAULT_TEMPLATES["tpl_seminar_step1_text"])
                                 send_whatsapp_message(sender_id, welcome_msg)
                                 database.save_message(sender_id, "assistant", welcome_msg)
                                 print(f"[Seminar] Registration started for +{sender_id} (intent: '{_msg_stripped[:40]}')")
@@ -1255,47 +1201,24 @@ async def handle_whatsapp_message(request: Request):
 
                                 if step == "seminar_name":
                                     database.update_seminar_field(sender_id, "naam", val, "seminar_class")
-                                    reply = (
-                                        f"✅ Shukriya, *{val}*!\n\n"
-                                        "━━━━━━━━━━━━━━━━━━━━\n"
-                                        "📚 *Step 2/6 — Aap kis class mein hain?*\n"
-                                        "_(e.g. Class 9, Class 10, Class 12)_"
-                                    )
+                                    raw_s2 = database.get_state("tpl_seminar_step2_text", DEFAULT_TEMPLATES["tpl_seminar_step2_text"])
+                                    reply = raw_s2.format(naam=val)
 
                                 elif step == "seminar_class":
                                     database.update_seminar_field(sender_id, "class_label", val, "seminar_father")
-                                    reply = (
-                                        "✅ Note kar liya!\n\n"
-                                        "━━━━━━━━━━━━━━━━━━━━\n"
-                                        "👨 *Step 3/6 — Aapke pita ji ka naam?*"
-                                    )
+                                    reply = database.get_state("tpl_seminar_step3_text", DEFAULT_TEMPLATES["tpl_seminar_step3_text"])
 
                                 elif step == "seminar_father":
                                     database.update_seminar_field(sender_id, "father_name", val, "seminar_mobile")
-                                    reply = (
-                                        "✅ Perfect!\n\n"
-                                        "━━━━━━━━━━━━━━━━━━━━\n"
-                                        "📱 *Step 4/6 — Aapka mobile number?*\n"
-                                        "_(Jis number par call chahiye)_"
-                                    )
+                                    reply = database.get_state("tpl_seminar_step4_text", DEFAULT_TEMPLATES["tpl_seminar_step4_text"])
 
                                 elif step == "seminar_mobile":
                                     database.update_seminar_field(sender_id, "mobile", val, "seminar_alt_mobile")
-                                    reply = (
-                                        "✅ Saved!\n\n"
-                                        "━━━━━━━━━━━━━━━━━━━━\n"
-                                        "📞 *Step 5/6 — Ek alternate mobile number dijiye*\n"
-                                        "_(Koi bhi family member ka — in case aap unavailable hon)_"
-                                    )
+                                    reply = database.get_state("tpl_seminar_step5_text", DEFAULT_TEMPLATES["tpl_seminar_step5_text"])
 
                                 elif step == "seminar_alt_mobile":
                                     database.update_seminar_field(sender_id, "alt_mobile", val, "seminar_address")
-                                    reply = (
-                                        "✅ Got it!\n\n"
-                                        "━━━━━━━━━━━━━━━━━━━━\n"
-                                        "🏠 *Step 6/6 — Aapka address?*\n"
-                                        "_(Gaon/Mohalla, City, PIN code)_"
-                                    )
+                                    reply = database.get_state("tpl_seminar_step6_text", DEFAULT_TEMPLATES["tpl_seminar_step6_text"])
 
                                 elif step == "seminar_address":
                                     # Final step — save address, mark complete in SQLite (state only)
@@ -1328,19 +1251,14 @@ async def handle_whatsapp_message(request: Request):
                                             print(f"[Seminar] Google Sheet push failed: {_se} — continuing anyway")
 
                                     # Confirmation to student
-                                    reply = (
-                                        "🎉 *Registration Complete! Shukriya!*\n\n"
-                                        "Aapki details successfully save ho gayi hain:\n\n"
-                                        f"👤 Naam: *{_name}*\n"
-                                        f"📚 Class: *{_cls}*\n"
-                                        f"👨 Pita ji: *{_father}*\n"
-                                        f"📱 Mobile: *{_mob}*\n"
-                                        f"📞 Alt Mobile: *{_alt}*\n"
-                                        f"🏠 Address: *{val}*\n\n"
-                                        "━━━━━━━━━━━━━━━━━━━━\n"
-                                        "✅ Hamare team member aapko *seminar ki poori details ke saath jald call karenge!*\n\n"
-                                        "Koi sawaal ho toh hume WhatsApp karo. 😊\n"
-                                        "*Kaksha Kendra — Yahan Ratta Nahi, Logic Sikhaya Jata Hai! ✨*"
+                                    raw_done = database.get_state("tpl_seminar_done_text", DEFAULT_TEMPLATES["tpl_seminar_done_text"])
+                                    reply = raw_done.format(
+                                        naam=_name,
+                                        class_label=_cls,
+                                        father_name=_father,
+                                        mobile=_mob,
+                                        alt_mobile=_alt,
+                                        address=val
                                     )
 
                                     # WhatsApp notification to admin
@@ -3721,7 +3639,10 @@ def admin_settings(user: str = Depends(verify_admin)):
         <div class="settings-wrap">
             <div class="top-bar">
                 <h1>⚙️ Bot Health & Settings</h1>
-                <a href="/admin" class="nav-link">← Back to dashboard</a>
+                <div style="display:flex;gap:10px">
+                    <a href="/admin/settings/templates" class="nav-link" style="background:rgba(16,185,129,0.1);color:#10b981;border:1px solid rgba(16,185,129,0.2)">📝 Edit Bot Templates</a>
+                    <a href="/admin" class="nav-link">← Back to dashboard</a>
+                </div>
             </div>
 
             <div class="settings-grid">
@@ -4083,6 +4004,666 @@ function createLeadCallReminder(d, inbound) {{
     </body>
     </html>
     """
+
+
+@app.get("/admin/settings/templates", response_class=HTMLResponse)
+def admin_settings_templates(request: Request, user: str = Depends(verify_admin)):
+    """Settings page to edit bot message templates and page links."""
+    # List of categories, icons, and template fields
+    TEMPLATES_METADATA = [
+        {
+            "category": "Core Greetings",
+            "icon": "🏠",
+            "fields": [
+                {
+                    "key": "tpl_greeting_text",
+                    "label": "Welcome Greeting",
+                    "desc": "Sent when student says Hi/Hello. Auto-appends menu options button list.",
+                    "type": "textarea",
+                    "rows": 6
+                },
+                {
+                    "key": "tpl_online_prompt_text",
+                    "label": "Online Class Selection Prompt",
+                    "desc": "Sent when student clicks 'Online Classes'. Auto-appends Class 6-8, 9, 10, 11, 12 buttons.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_offline_prompt_text",
+                    "label": "Offline Level Selection Prompt",
+                    "desc": "Sent when student clicks 'Offline Classes'. Auto-appends pre-primary, primary, junior, secondary, sr secondary buttons.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_doubt_deflection_text",
+                    "label": "Academic Doubt Deflection",
+                    "desc": "Deflection text sent when student asks subject-specific or academic doubts.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_copy_check_text",
+                    "label": "Copy Check Directives",
+                    "desc": "Reply sent when student inquires about on-screen copy/answer sheet issues.",
+                    "type": "textarea",
+                    "rows": 5
+                }
+            ]
+        },
+        {
+            "category": "Online Classes",
+            "icon": "🚀",
+            "fields": [
+                {
+                    "key": "tpl_class_6_8_text",
+                    "label": "Class 6-8 Online Message",
+                    "desc": "Marketing & details for Class 6-8 online batch.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_class_9_text",
+                    "label": "Class 9 Online Message",
+                    "desc": "Marketing & details for Class 9 online batch.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_class_10_text",
+                    "label": "Class 10 Online Message",
+                    "desc": "Marketing & details for Class 10 online batch.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_class_11_text",
+                    "label": "Class 11 Online Message",
+                    "desc": "Marketing & details for Class 11 online batch.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_class_12_text",
+                    "label": "Class 12 Online Message",
+                    "desc": "Marketing & details for Class 12 online batch.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_c68_foundation_checkout_text",
+                    "label": "Class 6-8 Foundation Checkout Text",
+                    "desc": "Message sent when junior foundation is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_c9_maths_checkout_text",
+                    "label": "Class 9 Maths Checkout Text",
+                    "desc": "Message sent when Class 9 Maths is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_c9_science_checkout_text",
+                    "label": "Class 9 Science Checkout Text",
+                    "desc": "Message sent when Class 9 Science is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_c9_combo_checkout_text",
+                    "label": "Class 9 Combo Checkout Text",
+                    "desc": "Message sent when Class 9 Maths + Science is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_c10_maths_checkout_text",
+                    "label": "Class 10 Maths Checkout Text",
+                    "desc": "Message sent when Class 10 Maths is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_c10_science_checkout_text",
+                    "label": "Class 10 Science Checkout Text",
+                    "desc": "Message sent when Class 10 Science is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_c10_combo_checkout_text",
+                    "label": "Class 10 Combo Checkout Text",
+                    "desc": "Message sent when Class 10 Maths + Science is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_c11_maths_checkout_text",
+                    "label": "Class 11 Maths Checkout Text",
+                    "desc": "Message sent when Class 11 Maths is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                },
+                {
+                    "key": "tpl_c12_maths_checkout_text",
+                    "label": "Class 12 Maths Checkout Text",
+                    "desc": "Message sent when Class 12 Maths is selected.",
+                    "type": "textarea",
+                    "rows": 5
+                }
+            ]
+        },
+        {
+            "category": "Offline Classes",
+            "icon": "🏫",
+            "fields": [
+                {
+                    "key": "tpl_offline_pre_primary_text",
+                    "label": "Pre-Primary Offline Message",
+                    "desc": "Covers Nur-UKG details.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_offline_primary_text",
+                    "label": "Primary Offline Message",
+                    "desc": "Covers 1st-5th grades.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_offline_junior_text",
+                    "label": "Junior Offline Message",
+                    "desc": "Covers 6th-8th grades.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_offline_secondary_text",
+                    "label": "Secondary Offline Message",
+                    "desc": "Covers 9th-10th grades.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_offline_sr_secondary_text",
+                    "label": "Sr. Secondary Offline Message",
+                    "desc": "Covers 11th-12th grades.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_offline_register_now_text",
+                    "label": "Offline Register Response",
+                    "desc": "Details sent when student clicks offline registration button.",
+                    "type": "textarea",
+                    "rows": 4
+                }
+            ]
+        },
+        {
+            "category": "Drips & Seminars",
+            "icon": "🔔",
+            "fields": [
+                {
+                    "key": "tpl_bounce_back_text",
+                    "label": "Bounce Back Batch Details",
+                    "desc": "Standard detailed reply for CBSE Maths RT students.",
+                    "type": "textarea",
+                    "rows": 6
+                },
+                {
+                    "key": "tpl_brahmastra_text",
+                    "label": "Brahmastra Batch Details",
+                    "desc": "Standard detailed reply for calculation/math speed batch.",
+                    "type": "textarea",
+                    "rows": 6
+                },
+                {
+                    "key": "tpl_bb_yes_purchased_text",
+                    "label": "Bounce Back Purchase Confirmation",
+                    "desc": "Bot message sent when student selects 'Yes, I Purchased!' option.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_bb_not_yet_text",
+                    "label": "Bounce Back 'Not Yet' Response",
+                    "desc": "Bot message sent when student selects 'Not Yet' option.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_bb_drip_promo_text",
+                    "label": "Drip Campaign discount promo message",
+                    "desc": "Special coupon offering Flat 1000 off.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_bb_drip_check_text",
+                    "label": "Drip Campaign Status Checker",
+                    "desc": "Initial drip campaign text sent to prompt user selection.",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_bb_drip_reminder_text",
+                    "label": "Drip Campaign Reminder Details",
+                    "desc": "Follow-up reminder text. Supports {reminder_num} dynamic tag.",
+                    "type": "textarea",
+                    "rows": 6
+                },
+                {
+                    "key": "tpl_seminar_step1_text",
+                    "label": "Seminar Step 1",
+                    "desc": "Introductory message prompt for Seminar registration (full name).",
+                    "type": "textarea",
+                    "rows": 4
+                },
+                {
+                    "key": "tpl_seminar_done_text",
+                    "label": "Seminar Complete confirmation",
+                    "desc": "Confirmation receipt. Supports tags: {naam}, {class_label}, {father_name}, {mobile}, {alt_mobile}, {address}.",
+                    "type": "textarea",
+                    "rows": 8
+                }
+            ]
+        },
+        {
+            "category": "Links Database",
+            "icon": "🔗",
+            "fields": [
+                {"key": "link_c68_buy", "label": "Class 6-8 Buy URL", "type": "text"},
+                {"key": "link_c9_maths_buy", "label": "Class 9 Maths Buy URL", "type": "text"},
+                {"key": "link_c9_science_buy", "label": "Class 9 Science Buy URL", "type": "text"},
+                {"key": "link_c9_combo_buy", "label": "Class 9 Combo Buy URL", "type": "text"},
+                {"key": "link_c10_maths_buy", "label": "Class 10 Maths Buy URL", "type": "text"},
+                {"key": "link_c10_science_buy", "label": "Class 10 Science Buy URL", "type": "text"},
+                {"key": "link_c10_combo_buy", "label": "Class 10 Combo Buy URL", "type": "text"},
+                {"key": "link_c11_maths_buy", "label": "Class 11 Maths Buy URL", "type": "text"},
+                {"key": "link_c12_maths_buy", "label": "Class 12 Maths Buy URL", "type": "text"},
+                {"key": "link_bounce_back_buy", "label": "Bounce Back Buy URL", "type": "text"},
+                {"key": "link_brahmastra_buy", "label": "Brahmastra Buy URL", "type": "text"},
+                
+                {"key": "link_c68_page", "label": "Class 6-8 Info Page URL", "type": "text"},
+                {"key": "link_c9_page", "label": "Class 9 Info Page URL", "type": "text"},
+                {"key": "link_c10_page", "label": "Class 10 Info Page URL", "type": "text"},
+                {"key": "link_c11_page", "label": "Class 11 Info Page URL", "type": "text"},
+                {"key": "link_c12_page", "label": "Class 12 Info Page URL", "type": "text"},
+                
+                {"key": "link_offline_register_form", "label": "Offline Google Forms Registration URL", "type": "text"}
+            ]
+        }
+    ]
+
+    tabs_html = []
+    content_html = []
+    
+    for idx, cat_data in enumerate(TEMPLATES_METADATA):
+        active_class = "active" if idx == 0 else ""
+        tabs_html.append(f"""
+            <button type="button" class="tab-btn {active_class}" onclick="showTab(event, 'tab-{idx}')">
+                {cat_data['icon']} {cat_data['category']}
+            </button>
+        """)
+        
+        fields_html = []
+        for field in cat_data['fields']:
+            val = database.get_state(field['key'])
+            if val is None:
+                val = DEFAULT_TEMPLATES.get(field['key'], "")
+            
+            # Escape HTML characters so they render nicely inside inputs/textareas
+            from html import escape
+            escaped_val = escape(val)
+            
+            desc_html = f'<div class="field-desc">{field["desc"]}</div>' if field.get("desc") else ''
+            
+            if field['type'] == 'textarea':
+                fields_html.append(f"""
+                    <div class="form-group">
+                        <label for="{field['key']}">{field['label']}</label>
+                        {desc_html}
+                        <textarea id="{field['key']}" name="{field['key']}" rows="{field['rows']}">{escaped_val}</textarea>
+                    </div>
+                """)
+            else:
+                fields_html.append(f"""
+                    <div class="form-group">
+                        <label for="{field['key']}">{field['label']}</label>
+                        {desc_html}
+                        <input type="text" id="{field['key']}" name="{field['key']}" value="{escaped_val}"/>
+                    </div>
+                """)
+        
+        display_style = "display: block;" if idx == 0 else "display: none;"
+        content_html.append(f"""
+            <div id="tab-{idx}" class="tab-content" style="{display_style}">
+                <h2 class="tab-title">{cat_data['icon']} {cat_data['category']}</h2>
+                {''.join(fields_html)}
+            </div>
+        """)
+
+    show_toast = "true" if request.query_params.get("saved") == "true" else "false"
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Bot Templates · Kaksha Kendra Bot</title>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta name="theme-color" content="#5288c1"/>
+        <link rel="icon" type="image/png" href="/static/favicon.png">
+        <style>
+            {_ADMIN_CSS}
+            html, body {{ height: auto !important; overflow: auto !important; }}
+            body {{ min-height: 100vh; min-height: 100dvh; padding-bottom: 60px; }}
+            .templates-wrap {{ padding: 24px; max-width: 1200px; margin: 0 auto; width: 100%; }}
+            
+            .top-bar {{
+                position: sticky;
+                top: 0;
+                z-index: 50;
+                background: rgba(14, 22, 33, 0.85);
+                backdrop-filter: blur(30px) saturate(180%);
+                -webkit-backdrop-filter: blur(30px) saturate(180%);
+                margin: -24px -24px 20px;
+                padding: 16px 24px;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 12px;
+            }}
+            .top-bar h1 {{ margin: 0; font-size: 22px; font-weight: 700; color: #fff; }}
+            
+            .editor-layout {{
+                display: grid;
+                grid-template-columns: 280px 1fr;
+                gap: 24px;
+                align-items: start;
+            }}
+            
+            .tabs-nav {{
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                background: rgba(23, 33, 43, 0.3);
+                border: 1px solid rgba(255,255,255,0.05);
+                border-radius: 16px;
+                padding: 12px;
+                backdrop-filter: blur(20px);
+            }}
+            .tab-btn {{
+                background: transparent;
+                border: none;
+                color: #95a3b1;
+                padding: 12px 16px;
+                border-radius: 10px;
+                text-align: left;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }}
+            .tab-btn:hover {{
+                color: #fff;
+                background: rgba(255,255,255,0.04);
+            }}
+            .tab-btn.active {{
+                color: #fff;
+                background: rgba(82, 136, 193, 0.15);
+                border-left: 3px solid #5288c1;
+            }}
+            
+            .form-card {{
+                background: rgba(23, 33, 43, 0.55);
+                backdrop-filter: blur(40px) saturate(180%);
+                -webkit-backdrop-filter: blur(40px) saturate(180%);
+                border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 16px;
+                padding: 24px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            }}
+            .tab-title {{
+                margin-top: 0;
+                margin-bottom: 20px;
+                font-size: 18px;
+                font-weight: 700;
+                color: #fff;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
+                padding-bottom: 10px;
+            }}
+            
+            .form-group {{
+                margin-bottom: 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }}
+            .form-group:last-child {{
+                margin-bottom: 0;
+            }}
+            .form-group label {{
+                font-size: 13px;
+                font-weight: 600;
+                color: #95a3b1;
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+            }}
+            .field-desc {{
+                font-size: 12px;
+                color: #7d8e9c;
+                margin-top: -2px;
+                margin-bottom: 4px;
+                line-height: 1.4;
+            }}
+            .form-group textarea, .form-group input {{
+                background: rgba(14, 22, 33, 0.6);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 10px;
+                padding: 12px 14px;
+                color: #fff;
+                font-size: 14px;
+                font-family: inherit;
+                line-height: 1.5;
+                transition: all 0.2s ease;
+                width: 100%;
+            }}
+            .form-group textarea:focus, .form-group input:focus {{
+                outline: none;
+                border-color: #5288c1;
+                background: rgba(14, 22, 33, 0.8);
+                box-shadow: 0 0 0 3px rgba(82, 136, 193, 0.15);
+            }}
+            
+            .action-bar {{
+                margin-top: 24px;
+                display: flex;
+                justify-content: flex-end;
+                gap: 12px;
+            }}
+            .save-btn {{
+                background: linear-gradient(135deg, #10b981, #059669);
+                color: #fff;
+                border: none;
+                padding: 12px 28px;
+                border-radius: 24px;
+                font-size: 14px;
+                font-weight: 700;
+                cursor: pointer;
+                box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }}
+            .save-btn:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+            }}
+            .save-btn:active {{
+                transform: translateY(0);
+            }}
+            .cancel-btn {{
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                color: #95a3b1;
+                padding: 12px 24px;
+                border-radius: 24px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }}
+            .cancel-btn:hover {{
+                background: rgba(255, 255, 255, 0.08);
+                color: #fff;
+            }}
+            
+            .toast {{
+                position: fixed;
+                bottom: 24px;
+                left: 50%;
+                transform: translateX(-50%) translateY(100px);
+                background: #10b981;
+                color: #fff;
+                padding: 12px 24px;
+                border-radius: 30px;
+                font-weight: 700;
+                font-size: 14px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                z-index: 100;
+                opacity: 0;
+                transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            }}
+            .toast.show {{
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }}
+            
+            @media (max-width: 850px) {{
+                .editor-layout {{
+                    grid-template-columns: 1fr;
+                }}
+                .tabs-nav {{
+                    flex-direction: row;
+                    overflow-x: auto;
+                    padding: 8px;
+                    border-radius: 12px;
+                }}
+                .tab-btn {{
+                    white-space: nowrap;
+                    padding: 10px 14px;
+                    font-size: 13px;
+                }}
+                .templates-wrap {{
+                    padding: 14px;
+                }}
+                .top-bar {{
+                    margin: -14px -14px 14px;
+                    padding: 12px 14px;
+                }}
+                .form-card {{
+                    padding: 16px;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="templates-wrap">
+            <div class="top-bar">
+                <h1>📝 Bot Message & Link Templates</h1>
+                <a href="/admin/settings" class="nav-link">← Back to settings</a>
+            </div>
+
+            <form action="/admin/settings/templates/save" method="POST">
+                <div class="editor-layout">
+                    <div class="tabs-nav">
+                        {"".join(tabs_html)}
+                    </div>
+                    
+                    <div class="form-card">
+                        {"".join(content_html)}
+                        
+                        <div class="action-bar">
+                            <a href="/admin/settings" class="cancel-btn">Cancel</a>
+                            <button type="submit" class="save-btn">
+                                💾 Save Templates
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div id="toast" class="toast">
+            <span>✅ Templates saved successfully!</span>
+        </div>
+
+        <script>
+            function showTab(event, tabId) {{
+                // Hide all tab contents
+                const contents = document.querySelectorAll('.tab-content');
+                contents.forEach(c => c.style.display = 'none');
+                
+                // Deactivate all tab buttons
+                const buttons = document.querySelectorAll('.tab-btn');
+                buttons.forEach(b => b.classList.remove('active'));
+                
+                // Show current content and set button active
+                document.getElementById(tabId).style.display = 'block';
+                if (event) {{
+                    event.currentTarget.classList.add('active');
+                }} else {{
+                    // Initial load fallback
+                    const btn = document.querySelector(`.tab-btn[onclick*="${{tabId}}"]`);
+                    if (btn) btn.classList.add('active');
+                }}
+            }}
+
+            // Show toast message on save
+            window.addEventListener('DOMContentLoaded', () => {{
+                if ({show_toast}) {{
+                    const toast = document.getElementById('toast');
+                    toast.classList.add('show');
+                    setTimeout(() => {{
+                        toast.classList.remove('show');
+                    }}, 3000);
+                }}
+            }});
+        </script>
+    </body>
+    </html>
+    """
+
+
+@app.post("/admin/settings/templates/save")
+async def save_templates(request: Request, user: str = Depends(verify_admin)):
+    form_data = await request.form()
+    for key in DEFAULT_TEMPLATES.keys():
+        if key in form_data:
+            val = form_data.get(key, "").strip()
+            # Clean newlines from link inputs
+            if key.startswith("link_"):
+                val = val.replace("\r", "").replace("\n", "").strip()
+            database.set_state(key, val)
+    return RedirectResponse("/admin/settings/templates?saved=true", status_code=303)
 
 
 @app.get("/admin/export/csv")
