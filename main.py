@@ -415,6 +415,172 @@ def _is_team_phone(sender_id: str) -> bool:
     return sender_id.lstrip("+") in nums
 
 
+def _handle_menu_navigation(sender_id: str, message_text: str, history: list) -> str | None:
+    """
+    Statically intercepts standard bot navigation choices to bypass AI model API calls.
+    Returns the message to send to the student, or None if it should fall back to AI.
+    """
+    msg = message_text.strip().lower()
+
+    # 1. Greeting trigger
+    if msg in {"hi", "hello", "hey", "start", "menu", "namaste", "pranam"}:
+        database.clear_seminar_registration(sender_id)
+        prompt = database.get_state("tpl_greeting_text", DEFAULT_TEMPLATES["tpl_greeting_text"])
+        options = (
+            "\n\n[OPTIONS]\n"
+            "Online Classes\n"
+            "Offline Classes\n"
+            "🔥 Bounce Back Batch\n"
+            "⚡ Brahmastra Batch\n"
+            "📋 Seminar Registration\n"
+            "[/OPTIONS]"
+        )
+        return f"{prompt}{options}"
+
+    # 2. Main Track Selections
+    if msg == "online classes":
+        database.clear_seminar_registration(sender_id)
+        prompt = database.get_state("tpl_online_prompt_text", DEFAULT_TEMPLATES["tpl_online_prompt_text"])
+        options = "\n\n[OPTIONS]\nClass 6-8\nClass 9\nClass 10\nClass 11\nClass 12\n[/OPTIONS]"
+        return f"{prompt}{options}"
+
+    if msg == "offline classes":
+        database.clear_seminar_registration(sender_id)
+        prompt = database.get_state("tpl_offline_prompt_text", DEFAULT_TEMPLATES["tpl_offline_prompt_text"])
+        options = (
+            "\n\n[OPTIONS]\n"
+            "Pre-Primary (Nur-UKG)\n"
+            "Primary (1st-5th)\n"
+            "Junior (6th-8th)\n"
+            "Secondary (9th-10th)\n"
+            "Sr. Secondary (11-12)\n"
+            "[/OPTIONS]"
+        )
+        return f"{prompt}{options}"
+
+    # 3. Online Class Levels Selection
+    if msg in {"class 6-8", "6-8", "6th-8th"}:
+        txt = database.get_state("tpl_class_6_8_text", DEFAULT_TEMPLATES["tpl_class_6_8_text"])
+        options = "\n\n[OPTIONS]\nFoundation Batch\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    if msg in {"class 9", "9", "9th", "class 9th"}:
+        txt = database.get_state("tpl_class_9_text", DEFAULT_TEMPLATES["tpl_class_9_text"])
+        options = "\n\n[OPTIONS]\nMaths\nScience\nMaths + Science\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    if msg in {"class 10", "10", "10th", "class 10th"}:
+        txt = database.get_state("tpl_class_10_text", DEFAULT_TEMPLATES["tpl_class_10_text"])
+        options = "\n\n[OPTIONS]\nMaths\nScience\nMaths + Science\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    if msg in {"class 11", "11", "11th", "class 11th"}:
+        txt = database.get_state("tpl_class_11_text", DEFAULT_TEMPLATES["tpl_class_11_text"])
+        options = "\n\n[OPTIONS]\nMaths\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    if msg in {"class 12", "12", "12th", "class 12th"}:
+        txt = database.get_state("tpl_class_12_text", DEFAULT_TEMPLATES["tpl_class_12_text"])
+        options = "\n\n[OPTIONS]\nMaths\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    # 4. Offline Class Levels Selection
+    if msg == "pre-primary (nur-ukg)":
+        txt = database.get_state("tpl_offline_pre_primary_text", DEFAULT_TEMPLATES["tpl_offline_pre_primary_text"])
+        options = "\n\n[OPTIONS]\nRegister Now\nCall Us\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    if msg == "primary (1st-5th)":
+        txt = database.get_state("tpl_offline_primary_text", DEFAULT_TEMPLATES["tpl_offline_primary_text"])
+        options = "\n\n[OPTIONS]\nRegister Now\nCall Us\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    if msg == "junior (6th-8th)":
+        txt = database.get_state("tpl_offline_junior_text", DEFAULT_TEMPLATES["tpl_offline_junior_text"])
+        options = "\n\n[OPTIONS]\nRegister Now\nCall Us\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    if msg == "secondary (9th-10th)":
+        txt = database.get_state("tpl_offline_secondary_text", DEFAULT_TEMPLATES["tpl_offline_secondary_text"])
+        options = "\n\n[OPTIONS]\nRegister Now\nCall Us\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    if msg == "sr. secondary (11-12)":
+        txt = database.get_state("tpl_offline_sr_secondary_text", DEFAULT_TEMPLATES["tpl_offline_sr_secondary_text"])
+        options = "\n\n[OPTIONS]\nRegister Now\nCall Us\n[/OPTIONS]"
+        return f"{txt}{options}"
+
+    # 5. Offline Registration Link
+    if msg == "register now":
+        txt = database.get_state("tpl_offline_register_now_text", DEFAULT_TEMPLATES["tpl_offline_register_now_text"])
+        reg_url = database.get_state("link_offline_register_form", DEFAULT_TEMPLATES["link_offline_register_form"])
+        return f"{txt}\n[CTA_URL display=\"🚀 Join Champions Circle\" url=\"{reg_url}\"]"
+
+    # 6. Online Subject / Course Selection
+    if msg == "foundation batch":
+        checkout_text = database.get_state("tpl_c68_foundation_checkout_text", DEFAULT_TEMPLATES["tpl_c68_foundation_checkout_text"])
+        buy_url = database.get_state("link_c68_buy", DEFAULT_TEMPLATES["link_c68_buy"])
+        return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+
+    if msg in {"maths", "science", "maths + science"}:
+        # Scan history from newest to oldest for the user's class choice
+        user_class = None
+        for m in reversed(history):
+            if m["role"] == "user":
+                content = m["content"].strip().lower()
+                if "class 9" in content or content == "9" or content == "9th":
+                    user_class = "class_9"
+                    break
+                if "class 10" in content or content == "10" or content == "10th":
+                    user_class = "class_10"
+                    break
+                if "class 11" in content or content == "11" or content == "11th":
+                    user_class = "class_11"
+                    break
+                if "class 12" in content or content == "12" or content == "12th":
+                    user_class = "class_12"
+                    break
+                if "class 6-8" in content or "6-8" in content or "6th-8th" in content:
+                    user_class = "class_68"
+                    break
+
+        if user_class == "class_9":
+            if msg == "maths":
+                checkout_text = database.get_state("tpl_c9_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c9_maths_checkout_text"])
+                buy_url = database.get_state("link_c9_maths_buy", DEFAULT_TEMPLATES["link_c9_maths_buy"])
+            elif msg == "science":
+                checkout_text = database.get_state("tpl_c9_science_checkout_text", DEFAULT_TEMPLATES["tpl_c9_science_checkout_text"])
+                buy_url = database.get_state("link_c9_science_buy", DEFAULT_TEMPLATES["link_c9_science_buy"])
+            else:
+                checkout_text = database.get_state("tpl_c9_combo_checkout_text", DEFAULT_TEMPLATES["tpl_c9_combo_checkout_text"])
+                buy_url = database.get_state("link_c9_combo_buy", DEFAULT_TEMPLATES["link_c9_combo_buy"])
+            return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+
+        elif user_class == "class_10":
+            if msg == "maths":
+                checkout_text = database.get_state("tpl_c10_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c10_maths_checkout_text"])
+                buy_url = database.get_state("link_c10_maths_buy", DEFAULT_TEMPLATES["link_c10_maths_buy"])
+            elif msg == "science":
+                checkout_text = database.get_state("tpl_c10_science_checkout_text", DEFAULT_TEMPLATES["tpl_c10_science_checkout_text"])
+                buy_url = database.get_state("link_c10_science_buy", DEFAULT_TEMPLATES["link_c10_science_buy"])
+            else:
+                checkout_text = database.get_state("tpl_c10_combo_checkout_text", DEFAULT_TEMPLATES["tpl_c10_combo_checkout_text"])
+                buy_url = database.get_state("link_c10_combo_buy", DEFAULT_TEMPLATES["link_c10_combo_buy"])
+            return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+
+        elif user_class == "class_11":
+            checkout_text = database.get_state("tpl_c11_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c11_maths_checkout_text"])
+            buy_url = database.get_state("link_c11_maths_buy", DEFAULT_TEMPLATES["link_c11_maths_buy"])
+            return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+
+        elif user_class == "class_12":
+            checkout_text = database.get_state("tpl_c12_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c12_maths_checkout_text"])
+            buy_url = database.get_state("link_c12_maths_buy", DEFAULT_TEMPLATES["link_c12_maths_buy"])
+            return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+
+    return None
+
+
 def _handle_team_login_logout(sender_id: str, message_text: str) -> bool:
     """
     Detects 'login' / 'logout' commands from team members and updates state.
@@ -1381,6 +1547,15 @@ async def handle_whatsapp_message(request: Request):
                                 _sync_to_google_sheets(
                                     sender_id, contact_name, message_text, role="user",
                                 )
+
+                            # ----- Static Menu Navigation (No AI Key Required) -----
+                            static_reply = _handle_menu_navigation(sender_id, message_text, history)
+                            if static_reply:
+                                database.save_message(sender_id, "user", message_text)
+                                send_whatsapp_message(sender_id, static_reply)
+                                database.save_message(sender_id, "assistant", static_reply)
+                                print(f"[StaticMenu] Guided +{sender_id} via static flow: '{message_text.strip()}'")
+                                continue
 
                             # 2. Save current user message to DB
                             database.save_message(sender_id, "user", message_text)

@@ -985,7 +985,13 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
 
     # ---------- All providers failed ----------
     _bump_stat("all_failed")
-    return "I'm sorry, our AI is extremely busy right now helping other students! Please try again in a moment."
+    return (
+        "I'm sorry, our AI is extremely busy right now! 🙏\n\n"
+        "📞 *Direct Connect!*\n"
+        "Tap to call us directly:\n"
+        "+91 75798 52528\n\n"
+        "Kaksha Kendra — Kanth, UP. 😊"
+    )
 
 
 def _build_whatsapp_payload(to_phone_number: str, message_text: str) -> dict:

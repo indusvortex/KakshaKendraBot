@@ -135,6 +135,13 @@ def start_seminar_registration(sender_id: str):
         conn.commit()
 
 
+def clear_seminar_registration(sender_id: str):
+    """Cancels any active seminar registration flow for this user by deleting the record."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM seminar_registrations WHERE sender_id = ? AND completed_at IS NULL", (sender_id,))
+        conn.commit()
+
+
 def get_seminar_state(sender_id: str) -> dict | None:
     """Returns the current seminar registration record, or None if not in a flow."""
     with sqlite3.connect(DB_PATH) as conn:
