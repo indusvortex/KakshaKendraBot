@@ -1110,6 +1110,7 @@ def login_page(request: Request, error: str = "", success: str = ""):
         <title>Login - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="icon" type="image/png" href="/static/favicon.png">
+        <link rel="manifest" href="/manifest.json">
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: radial-gradient(ellipse at 0% 0%, rgba(82,136,193,0.18) 0%, transparent 45%), radial-gradient(ellipse at 100% 100%, rgba(217,70,170,0.10) 0%, transparent 45%), radial-gradient(ellipse at 50% 50%, rgba(16,185,129,0.05) 0%, transparent 50%), linear-gradient(135deg, #0a1320 0%, #0e1621 50%, #14202d 100%); background-attachment: fixed; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e6edf3; overflow: hidden; }}
             .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
@@ -1149,6 +1150,15 @@ def login_page(request: Request, error: str = "", success: str = ""):
                 </form>
             </div>
         </div>
+        <script>
+            if ('serviceWorker' in navigator) {{
+                window.addEventListener('load', () => {{
+                    navigator.serviceWorker.register('/sw.js', {{ scope: '/' }})
+                        .then(reg => console.log('SW registered', reg))
+                        .catch(err => console.error('SW registration failed', err));
+                }});
+            }}
+        </script>
     </body>
     </html>
     """
@@ -1178,6 +1188,7 @@ def forgot_password_page(request: Request, error: str = ""):
         <title>Forgot Password - Kaksha Kendra</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="icon" type="image/png" href="/static/favicon.png">
+        <link rel="manifest" href="/manifest.json">
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji"; background: radial-gradient(ellipse at 0% 0%, rgba(82,136,193,0.18) 0%, transparent 45%), radial-gradient(ellipse at 100% 100%, rgba(217,70,170,0.10) 0%, transparent 45%), radial-gradient(ellipse at 50% 50%, rgba(16,185,129,0.05) 0%, transparent 50%), linear-gradient(135deg, #0a1320 0%, #0e1621 50%, #14202d 100%); background-attachment: fixed; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #e6edf3; overflow: hidden; }}
             .login-wrapper {{ position: relative; width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }}
@@ -1217,6 +1228,15 @@ def forgot_password_page(request: Request, error: str = ""):
                 </form>
             </div>
         </div>
+        <script>
+            if ('serviceWorker' in navigator) {{
+                window.addEventListener('load', () => {{
+                    navigator.serviceWorker.register('/sw.js', {{ scope: '/' }})
+                        .then(reg => console.log('SW registered', reg))
+                        .catch(err => console.error('SW registration failed', err));
+                }});
+            }}
+        </script>
     </body>
     </html>
     """
@@ -1720,8 +1740,19 @@ async def handle_whatsapp_message(request: Request):
 
 
 @app.get("/")
-def health_check():
-    return {"status": "Bot is running perfectly!"}
+def health_check(request: Request):
+    # Support JSON check for monitoring services
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept and "text/html" not in accept:
+        return {"status": "Bot is running perfectly!"}
+
+    # Redirect users to admin if logged in, otherwise to login page
+    token = request.cookies.get("auth_token")
+    if token:
+        role = database.get_state(f"session_{token}")
+        if role:
+            return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/login", status_code=303)
 
 
 # ============================================================
