@@ -417,12 +417,123 @@ def _is_team_phone(sender_id: str) -> bool:
 
 def _handle_menu_navigation(sender_id: str, message_text: str, history: list) -> str | None:
     """
-    Statically intercepts standard bot navigation choices to bypass AI model API calls.
+    Statically intercepts standard bot navigation choices and smart natural language intents
+    to bypass AI model API calls.
     Returns the message to send to the student, or None if it should fall back to AI.
     """
     msg = message_text.strip().lower()
 
-    # 1. Greeting trigger
+    # Normalize message for parsing smart intents
+    import re
+    msg_clean = " " + re.sub(r'[^\w\s\-\+]', '', msg)
+    msg_clean = re.sub(r'\s+', ' ', msg_clean).strip() + " "
+    msg_clean = " " + msg_clean # Wrap with spaces for exact word matching
+
+    # 1. Smart Course Enrollment Detection (Class + Subject)
+    detected_class = None
+    if any(k in msg_clean for k in [" class 9 ", " class 9th ", " 9th class ", " 9 class ", " grade 9 ", " 9th ", " class9 ", " class9th ", " 9thth "]):
+        detected_class = "class_9"
+    elif any(k in msg_clean for k in [" class 10 ", " class 10th ", " 10th class ", " 10 class ", " grade 10 ", " 10th ", " class10 ", " class10th ", " 10thth "]):
+        detected_class = "class_10"
+    elif any(k in msg_clean for k in [" class 11 ", " class 11th ", " 11th class ", " 11 class ", " grade 11 ", " 11th ", " class11 ", " class11th ", " 11thth "]):
+        detected_class = "class_12" if " 12 " in msg_clean or " 12th " in msg_clean else "class_11" # Safety check
+    # Ensure Class 12 matches separately too
+    if any(k in msg_clean for k in [" class 12 ", " class 12th ", " 12th class ", " 12 class ", " grade 12 ", " 12th ", " class12 ", " class12th ", " 12thth "]):
+        detected_class = "class_12"
+    elif any(k in msg_clean for k in [" class 6 ", " class 7 ", " class 8 ", " class 6-8 ", " 6-8 ", " 6th ", " 7th ", " 8th ", " junior ", " class6 ", " class7 ", " class8 "]):
+        detected_class = "class_68"
+
+    detected_subject = None
+    if "maths + science" in msg_clean or "math + science" in msg_clean or "combo" in msg_clean or "both" in msg_clean or ("math" in msg_clean and "science" in msg_clean):
+        detected_subject = "combo"
+    elif "science" in msg_clean or "sci " in msg_clean or " vigyan " in msg_clean:
+        detected_subject = "science"
+    elif "math" in msg_clean or "ganit" in msg_clean or "maths" in msg_clean:
+        detected_subject = "maths"
+    elif "foundation" in msg_clean or "basic" in msg_clean:
+        detected_subject = "foundation"
+
+    # Route if class is detected
+    if detected_class:
+        if detected_class == "class_9":
+            if detected_subject == "maths":
+                checkout_text = database.get_state("tpl_c9_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c9_maths_checkout_text"])
+                buy_url = database.get_state("link_c9_maths_buy", DEFAULT_TEMPLATES["link_c9_maths_buy"])
+                return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+            elif detected_subject == "science":
+                checkout_text = database.get_state("tpl_c9_science_checkout_text", DEFAULT_TEMPLATES["tpl_c9_science_checkout_text"])
+                buy_url = database.get_state("link_c9_science_buy", DEFAULT_TEMPLATES["link_c9_science_buy"])
+                return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+            elif detected_subject == "combo":
+                checkout_text = database.get_state("tpl_c9_combo_checkout_text", DEFAULT_TEMPLATES["tpl_c9_combo_checkout_text"])
+                buy_url = database.get_state("link_c9_combo_buy", DEFAULT_TEMPLATES["link_c9_combo_buy"])
+                return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+            else:
+                # No subject, send Class 9 prompt
+                txt = database.get_state("tpl_class_9_text", DEFAULT_TEMPLATES["tpl_class_9_text"])
+                options = "\n\n[OPTIONS]\nMaths\nScience\nMaths + Science\n[/OPTIONS]"
+                return f"{txt}{options}"
+
+        elif detected_class == "class_10":
+            if detected_subject == "maths":
+                checkout_text = database.get_state("tpl_c10_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c10_maths_checkout_text"])
+                buy_url = database.get_state("link_c10_maths_buy", DEFAULT_TEMPLATES["link_c10_maths_buy"])
+                return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+            elif detected_subject == "science":
+                checkout_text = database.get_state("tpl_c10_science_checkout_text", DEFAULT_TEMPLATES["tpl_c10_science_checkout_text"])
+                buy_url = database.get_state("link_c10_science_buy", DEFAULT_TEMPLATES["link_c10_science_buy"])
+                return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+            elif detected_subject == "combo":
+                checkout_text = database.get_state("tpl_c10_combo_checkout_text", DEFAULT_TEMPLATES["tpl_c10_combo_checkout_text"])
+                buy_url = database.get_state("link_c10_combo_buy", DEFAULT_TEMPLATES["link_c10_combo_buy"])
+                return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+            else:
+                txt = database.get_state("tpl_class_10_text", DEFAULT_TEMPLATES["tpl_class_10_text"])
+                options = "\n\n[OPTIONS]\nMaths\nScience\nMaths + Science\n[/OPTIONS]"
+                return f"{txt}{options}"
+
+        elif detected_class == "class_11":
+            # Class 11 only has Maths online
+            checkout_text = database.get_state("tpl_c11_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c11_maths_checkout_text"])
+            buy_url = database.get_state("link_c11_maths_buy", DEFAULT_TEMPLATES["link_c11_maths_buy"])
+            return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+
+        elif detected_class == "class_12":
+            # Class 12 only has Maths online
+            checkout_text = database.get_state("tpl_c12_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c12_maths_checkout_text"])
+            buy_url = database.get_state("link_c12_maths_buy", DEFAULT_TEMPLATES["link_c12_maths_buy"])
+            return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+
+        elif detected_class == "class_68":
+            # Class 6-8 only has Foundation Batch online
+            checkout_text = database.get_state("tpl_c68_foundation_checkout_text", DEFAULT_TEMPLATES["tpl_c68_foundation_checkout_text"])
+            buy_url = database.get_state("link_c68_buy", DEFAULT_TEMPLATES["link_c68_buy"])
+            return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
+
+    # 2. General Intent Detection (Admission / Enroll / Course / Offline / Online)
+    # Check offline intent first so queries like "offline classes" aren't matched by the generic "classes" online trigger
+    if any(k in msg_clean for k in [" offline class ", " offline classes ", " offline course ", " offline batch ", " offline center ", " kanth center ", " coaching center ", " tuition "]):
+        database.clear_seminar_registration(sender_id)
+        prompt = database.get_state("tpl_offline_prompt_text", DEFAULT_TEMPLATES["tpl_offline_prompt_text"])
+        options = (
+            "\n\n[OPTIONS]\n"
+            "Pre-Primary (Nur-UKG)\n"
+            "Primary (1st-5th)\n"
+            "Junior (6th-8th)\n"
+            "Secondary (9th-10th)\n"
+            "Sr. Secondary (11-12)\n"
+            "[/OPTIONS]"
+        )
+        return f"{prompt}{options}"
+
+    if any(k in msg_clean for k in [" online class ", " online classes ", " online course ", " online batch ", " courses ", " batches ", " study online ", " classes "]):
+        database.clear_seminar_registration(sender_id)
+        prompt = database.get_state("tpl_online_prompt_text", DEFAULT_TEMPLATES["tpl_online_prompt_text"])
+        options = "\n\n[OPTIONS]\nClass 6-8\nClass 9\nClass 10\nClass 11\nClass 12\n[/OPTIONS]"
+        return f"{prompt}{options}"
+
+    # 3. Exact Menu Trigger Matches (Fallbacks for standard buttons)
+    # Greeting trigger
     if msg in {"hi", "hello", "hey", "start", "menu", "namaste", "pranam"}:
         database.clear_seminar_registration(sender_id)
         prompt = database.get_state("tpl_greeting_text", DEFAULT_TEMPLATES["tpl_greeting_text"])
@@ -437,7 +548,7 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
         )
         return f"{prompt}{options}"
 
-    # 2. Main Track Selections
+    # Main Track Selections
     if msg == "online classes":
         database.clear_seminar_registration(sender_id)
         prompt = database.get_state("tpl_online_prompt_text", DEFAULT_TEMPLATES["tpl_online_prompt_text"])
@@ -458,7 +569,7 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
         )
         return f"{prompt}{options}"
 
-    # 3. Online Class Levels Selection
+    # Online Class Levels Selection
     if msg in {"class 6-8", "6-8", "6th-8th"}:
         txt = database.get_state("tpl_class_6_8_text", DEFAULT_TEMPLATES["tpl_class_6_8_text"])
         options = "\n\n[OPTIONS]\nFoundation Batch\n[/OPTIONS]"
@@ -484,7 +595,7 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
         options = "\n\n[OPTIONS]\nMaths\n[/OPTIONS]"
         return f"{txt}{options}"
 
-    # 4. Offline Class Levels Selection
+    # Offline Class Levels Selection
     if msg == "pre-primary (nur-ukg)":
         txt = database.get_state("tpl_offline_pre_primary_text", DEFAULT_TEMPLATES["tpl_offline_pre_primary_text"])
         options = "\n\n[OPTIONS]\nRegister Now\nCall Us\n[/OPTIONS]"
@@ -510,13 +621,13 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
         options = "\n\n[OPTIONS]\nRegister Now\nCall Us\n[/OPTIONS]"
         return f"{txt}{options}"
 
-    # 5. Offline Registration Link
+    # Offline Registration Link
     if msg == "register now":
         txt = database.get_state("tpl_offline_register_now_text", DEFAULT_TEMPLATES["tpl_offline_register_now_text"])
         reg_url = database.get_state("link_offline_register_form", DEFAULT_TEMPLATES["link_offline_register_form"])
         return f"{txt}\n[CTA_URL display=\"🚀 Join Champions Circle\" url=\"{reg_url}\"]"
 
-    # 6. Online Subject / Course Selection
+    # Online Subject / Course Selection (Button click fallback via history)
     if msg == "foundation batch":
         checkout_text = database.get_state("tpl_c68_foundation_checkout_text", DEFAULT_TEMPLATES["tpl_c68_foundation_checkout_text"])
         buy_url = database.get_state("link_c68_buy", DEFAULT_TEMPLATES["link_c68_buy"])
