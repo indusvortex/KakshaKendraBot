@@ -532,6 +532,37 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
         options = "\n\n[OPTIONS]\nClass 6-8\nClass 9\nClass 10\nClass 11\nClass 12\n[/OPTIONS]"
         return f"{prompt}{options}"
 
+    # Neev Batch intent trigger (Class 9 / 10 batch)
+    if any(k in msg_clean for k in [" neev batch ", " neev ", " neevbatch "]):
+        # Determine class context from history if possible
+        user_class = None
+        for m in reversed(history):
+            if m["role"] == "user":
+                content = m["content"].strip().lower()
+                if "class 9" in content or content == "9" or content == "9th":
+                    user_class = "class_9"
+                    break
+                if "class 10" in content or content == "10" or content == "10th":
+                    user_class = "class_10"
+                    break
+        if user_class == "class_9":
+            txt = database.get_state("tpl_class_9_text", DEFAULT_TEMPLATES["tpl_class_9_text"])
+            options = "\n\n[OPTIONS]\nMaths\nScience\nMaths + Science\n[/OPTIONS]"
+            return f"{txt}{options}"
+        elif user_class == "class_10":
+            txt = database.get_state("tpl_class_10_text", DEFAULT_TEMPLATES["tpl_class_10_text"])
+            options = "\n\n[OPTIONS]\nMaths\nScience\nMaths + Science\n[/OPTIONS]"
+            return f"{txt}{options}"
+        else:
+            return (
+                "Neev Batch Class 9th aur 10th ke online/offline course ka naam hai. 🎓\n"
+                "Aap kaunsi class ke details dekhna chahte hain? 👇\n\n"
+                "[OPTIONS]\n"
+                "Class 9\n"
+                "Class 10\n"
+                "[/OPTIONS]"
+            )
+
     # 3. Exact Menu Trigger Matches (Fallbacks for standard buttons)
     # Greeting trigger
     if msg in {"hi", "hello", "hey", "start", "menu", "namaste", "pranam"}:
