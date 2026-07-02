@@ -506,12 +506,26 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
             # Class 11 only has Maths online
             checkout_text = database.get_state("tpl_c11_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c11_maths_checkout_text"])
             buy_url = database.get_state("link_c11_maths_buy", DEFAULT_TEMPLATES["link_c11_maths_buy"])
+            if detected_subject in {"science", "combo"}:
+                msg_text = (
+                    "Kaksha Kendra par Class 11th ke liye keval Maths course (Neev Batch) available hai. "
+                    "Science ya Combo options available nahi hain. 🎓\n\n"
+                    "Aap Class 11th Maths ke details niche dekh sakte hain:"
+                )
+                return f"{msg_text}\n\n{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
             return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
 
         elif detected_class == "class_12":
             # Class 12 only has Maths online
             checkout_text = database.get_state("tpl_c12_maths_checkout_text", DEFAULT_TEMPLATES["tpl_c12_maths_checkout_text"])
             buy_url = database.get_state("link_c12_maths_buy", DEFAULT_TEMPLATES["link_c12_maths_buy"])
+            if detected_subject in {"science", "combo"}:
+                msg_text = (
+                    "Kaksha Kendra par Class 12th ke liye keval Maths course (Neev Batch) available hai. "
+                    "Science ya Combo options available nahi hain. 🎓\n\n"
+                    "Aap Class 12th Maths ke details niche dekh sakte hain:"
+                )
+                return f"{msg_text}\n\n{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
             return f"{checkout_text}\n[CTA_URL display=\"🛒 Become a Champion\" url=\"{buy_url}\"]"
 
         elif detected_class == "class_68":
