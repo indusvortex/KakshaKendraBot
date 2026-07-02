@@ -910,9 +910,9 @@ Rajat Sir's team ready hai!
 __LINK_OFFLINE_REG__
 
 **KNOWLEDGE BASE (Answer questions using this):**
-- About Kaksha Kendra: Founder is Rajat Sir. We offer both Online and Offline coaching, including Neev Batch for Class 9th and 10th, and two special crash courses: Bounce Back Batch and Brahmastra Batch.
+- About Kaksha Kendra: Founder is Rajat Sir. We offer both Online and Offline coaching, including Neev Batch for Class 9th, 10th, 11th, and 12th, and two special crash courses: Bounce Back Batch and Brahmastra Batch.
   - Online: Class 6th to 12th (UP/CBSE boards, Hindi & English medium), Maths & Science focus.
-  - Neev Batch: The official online and offline batch name for Class 9th and 10th (offering Maths, Science, and Combo).
+  - Neev Batch: The official online and offline batch name for Class 9th, 10th, 11th, and 12th (offering Maths, Science, and Combo depending on level).
   - Offline: Pre-Primary (Nur-UKG), Primary (1-5), Junior (6-8), Secondary (9-10), Senior Secondary (11-12) — all subjects at the center.
   - Bounce Back Batch: A special CBSE Board 2026 crash course for RT (Re-Test) students in Maths. Tag line: "Fail nahi hone dunga!" by Rajat Sir. Covers everything from zero, focused on CBSE RT pattern. Enroll at: __LINK_BOUNCE_BACK_BUY__
   - Brahmastra Batch: A special course to improve calculation speed and strengthen Maths basics. Designed for students who want to master tricks and rebuild their fundamentals. Enroll at: __LINK_BRAHMASTRA_BUY__

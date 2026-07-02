@@ -425,7 +425,7 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
 
     # Normalize message for parsing smart intents
     import re
-    msg_clean = " " + re.sub(r'[^\w\s\-\+]', '', msg)
+    msg_clean = " " + re.sub(r'[^\w\s\-\+]', ' ', msg)
     msg_clean = re.sub(r'\s+', ' ', msg_clean).strip() + " "
     msg_clean = " " + msg_clean # Wrap with spaces for exact word matching
 
@@ -442,6 +442,16 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
         detected_class = "class_12"
     elif any(k in msg_clean for k in [" class 6 ", " class 7 ", " class 8 ", " class 6-8 ", " 6-8 ", " 6th ", " 7th ", " 8th ", " junior ", " class6 ", " class7 ", " class8 "]):
         detected_class = "class_68"
+
+    # Multi-class detection filter: if they mention multiple classes (e.g. "11/12" or "9th and 10th"),
+    # we don't want to match a single class course checkout.
+    mentioned_classes = []
+    if any(k in msg_clean for k in [" 9 ", " 9th ", " class9 ", " class9th "]): mentioned_classes.append("class_9")
+    if any(k in msg_clean for k in [" 10 ", " 10th ", " class10 ", " class10th "]): mentioned_classes.append("class_10")
+    if any(k in msg_clean for k in [" 11 ", " 11th ", " class11 ", " class11th "]): mentioned_classes.append("class_11")
+    if any(k in msg_clean for k in [" 12 ", " 12th ", " class12 ", " class12th "]): mentioned_classes.append("class_12")
+    if len(mentioned_classes) > 1:
+        detected_class = None
 
     detected_subject = None
     if "maths + science" in msg_clean or "math + science" in msg_clean or "combo" in msg_clean or "both" in msg_clean or ("math" in msg_clean and "science" in msg_clean):
@@ -532,19 +542,40 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
         options = "\n\n[OPTIONS]\nClass 6-8\nClass 9\nClass 10\nClass 11\nClass 12\n[/OPTIONS]"
         return f"{prompt}{options}"
 
-    # Neev Batch intent trigger (Class 9 / 10 batch)
+    # Neev Batch intent trigger (Class 9 / 10 / 11 / 12 batch)
     if any(k in msg_clean for k in [" neev batch ", " neev ", " neevbatch "]):
-        # Determine class context from history if possible
+        # Determine class context from current message and history
         user_class = None
-        for m in reversed(history):
-            if m["role"] == "user":
-                content = m["content"].strip().lower()
-                if "class 9" in content or content == "9" or content == "9th":
-                    user_class = "class_9"
-                    break
-                if "class 10" in content or content == "10" or content == "10th":
-                    user_class = "class_10"
-                    break
+        
+        # Check if they mention a single class in the cleaned message
+        has_9 = any(k in msg_clean for k in [" 9 ", " 9th ", " class9 ", " class9th "])
+        has_10 = any(k in msg_clean for k in [" 10 ", " 10th ", " class10 ", " class10th "])
+        has_11 = any(k in msg_clean for k in [" 11 ", " 11th ", " class11 ", " class11th "])
+        has_12 = any(k in msg_clean for k in [" 12 ", " 12th ", " class12 ", " class12th "])
+        
+        # Only set if exactly one class is matched (to prevent ambiguity like "11/12")
+        matched_classes = [c for c, flag in [("class_9", has_9), ("class_10", has_10), ("class_11", has_11), ("class_12", has_12)] if flag]
+        if len(matched_classes) == 1:
+            user_class = matched_classes[0]
+        
+        # If not uniquely matched, check history
+        if not user_class:
+            for m in reversed(history):
+                if m["role"] == "user":
+                    content = m["content"].strip().lower()
+                    h_clean = " " + re.sub(r'[^\w\s\-\+]', ' ', content)
+                    h_clean = re.sub(r'\s+', ' ', h_clean).strip() + " "
+                    h_clean = " " + h_clean
+                    
+                    h_has_9 = any(k in h_clean for k in [" 9 ", " 9th ", " class9 ", " class9th "])
+                    h_has_10 = any(k in h_clean for k in [" 10 ", " 10th ", " class10 ", " class10th "])
+                    h_has_11 = any(k in h_clean for k in [" 11 ", " 11th ", " class11 ", " class11th "])
+                    h_has_12 = any(k in h_clean for k in [" 12 ", " 12th ", " class12 ", " class12th "])
+                    h_matched = [c for c, flag in [("class_9", h_has_9), ("class_10", h_has_10), ("class_11", h_has_11), ("class_12", h_has_12)] if flag]
+                    if len(h_matched) == 1:
+                        user_class = h_matched[0]
+                        break
+
         if user_class == "class_9":
             txt = database.get_state("tpl_class_9_text", DEFAULT_TEMPLATES["tpl_class_9_text"])
             options = "\n\n[OPTIONS]\nMaths\nScience\nMaths + Science\n[/OPTIONS]"
@@ -553,13 +584,23 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
             txt = database.get_state("tpl_class_10_text", DEFAULT_TEMPLATES["tpl_class_10_text"])
             options = "\n\n[OPTIONS]\nMaths\nScience\nMaths + Science\n[/OPTIONS]"
             return f"{txt}{options}"
+        elif user_class == "class_11":
+            txt = database.get_state("tpl_class_11_text", DEFAULT_TEMPLATES["tpl_class_11_text"])
+            options = "\n\n[OPTIONS]\nMaths\n[/OPTIONS]"
+            return f"{txt}{options}"
+        elif user_class == "class_12":
+            txt = database.get_state("tpl_class_12_text", DEFAULT_TEMPLATES["tpl_class_12_text"])
+            options = "\n\n[OPTIONS]\nMaths\n[/OPTIONS]"
+            return f"{txt}{options}"
         else:
             return (
-                "Neev Batch Class 9th aur 10th ke online/offline course ka naam hai. 🎓\n"
+                "Neev Batch Class 9th, 10th, 11th aur 12th ke online/offline course ka naam hai. 🎓\n"
                 "Aap kaunsi class ke details dekhna chahte hain? 👇\n\n"
                 "[OPTIONS]\n"
                 "Class 9\n"
                 "Class 10\n"
+                "Class 11\n"
+                "Class 12\n"
                 "[/OPTIONS]"
             )
 
