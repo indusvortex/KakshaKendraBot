@@ -5339,6 +5339,7 @@ def manifest():
         "name": "Kaksha Kendra Bot",
         "short_name": "KK Bot",
         "description": "Admin dashboard for Kaksha Kendra WhatsApp bot",
+        "id": "/",
         "start_url": "/admin",
         "scope": "/",
         "display": "standalone",
@@ -5348,11 +5349,32 @@ def manifest():
         "icons": [
             {
                 "src": "/static/favicon.png",
-                "sizes": "any",
+                "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any",
             },
+            {
+                "src": "/static/favicon.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": "/static/favicon.png",
+                "sizes": "any",
+                "type": "image/png",
+                "purpose": "any",
+            }
         ],
+        "screenshots": [
+            {
+                "src": "/static/favicon.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "form_factor": "wide",
+                "label": "Kaksha Kendra Admin Dashboard"
+            }
+        ]
     })
 
 
