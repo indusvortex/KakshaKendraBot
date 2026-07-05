@@ -406,6 +406,7 @@ def add_lead_reminder(
     class_label: str,
     phone: str,
     source: str,
+    lead_type: str = None,
 ):
     """
     Creates a pending-call reminder for a new lead.
@@ -418,9 +419,9 @@ def add_lead_reminder(
         conn.execute(
             '''
             INSERT INTO lead_reminders
-                (sender_id, status, naam, class_label, phone, source, created_at,
+                (sender_id, status, naam, class_label, phone, source, lead_type, created_at,
                  last_reminded_at, admin_notified_at, called_at)
-            VALUES (?, 'pending', ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, NULL, NULL)
+            VALUES (?, 'pending', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, NULL, NULL)
             ON CONFLICT(sender_id) DO UPDATE SET
                 status            = CASE
                                       WHEN lead_reminders.status = 'pending'
@@ -431,6 +432,11 @@ def add_lead_reminder(
                 class_label       = excluded.class_label,
                 phone             = excluded.phone,
                 source            = excluded.source,
+                lead_type         = CASE
+                                      WHEN excluded.lead_type IS NOT NULL
+                                      THEN excluded.lead_type
+                                      ELSE lead_reminders.lead_type
+                                    END,
                 created_at        = CASE
                                       WHEN lead_reminders.status = 'pending'
                                       THEN lead_reminders.created_at
@@ -452,7 +458,17 @@ def add_lead_reminder(
                                       ELSE NULL
                                     END
             ''',
-            (sender_id, naam, class_label, phone, source),
+            (sender_id, naam, class_label, phone, source, lead_type),
+        )
+        conn.commit()
+
+
+def update_lead_type(sender_id: str, lead_type: str):
+    """Updates the lead_type for a specific lead."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE lead_reminders SET lead_type = ? WHERE sender_id = ?",
+            (lead_type, sender_id),
         )
         conn.commit()
 

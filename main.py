@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse,
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+import re
 
 import database
 from utils import (
@@ -260,20 +261,48 @@ def _whatsapp_broadcast(numbers_csv: str, message_text: str, label: str = "Notif
             print(f"[{label}] Exception -> +{num}: {e}")
 
 
+def _detect_lead_type(message_text: str) -> str:
+    """Detects if a student wants an offline course from their message."""
+    msg_clean = " " + re.sub(r'[^\w\s\-\+]', ' ', message_text.lower())
+    msg_clean = re.sub(r'\s+', ' ', msg_clean).strip() + " "
+    msg_clean = " " + msg_clean
+    
+    offline_keywords = [
+        "offline", "tuition", "kanth center", "coaching center", 
+        "offline classes", "offline class", "offline course", 
+        "offline batch", "kanth", "police station", "crusher"
+    ]
+    if any(k in msg_clean for k in offline_keywords):
+        return "Offline"
+    return "Online"
+
+
+def _get_recipient_for_lead(lead_type: str | None) -> str:
+    """
+    Returns the appropriate notification number(s) based on the lead type.
+    Falls back to TEAM_NOTIFY_NUMBERS if no specific number is configured.
+    """
+    if lead_type == "Offline":
+        offline_num = os.getenv("OFFLINE_NOTIFY_NUMBER", "").strip()
+        if offline_num:
+            return offline_num
+    return os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
+
+
 def _notify_team_of_new_lead(sender_id: str, name: str | None, first_message: str,
-                             class_label: str = "", source: str = ""):
+                             class_label: str = "", source: str = "", lead_type: str = ""):
     """
-    Sends a WhatsApp 'new student lead' alert to the TEAM numbers.
-    Configure TEAM_NOTIFY_NUMBERS env var (comma-separated, with country code, no +).
+    Sends a WhatsApp 'new student lead' alert to the TEAM numbers or offline call handler.
     """
-    team_numbers = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
-    if not team_numbers:
+    recipient = _get_recipient_for_lead(lead_type)
+    if not recipient:
         return
 
     name_display = (name or "Unknown").strip()
     msg_preview = first_message.strip()[:200]
+    lead_type_display = f" ({lead_type})" if lead_type else ""
     notification = (
-        f"🔔 *NEW LEAD — Please call!*\n"
+        f"🔔 *NEW LEAD{lead_type_display} — Please call!*\n"
         f"\n"
         f"👤 *Name:* {name_display}\n"
         f"📱 *Number:* +{sender_id}\n"
@@ -284,7 +313,7 @@ def _notify_team_of_new_lead(sender_id: str, name: str | None, first_message: st
         f"⚡ Call within 2 min or admin will be alerted.\n"
         f"📊 Open dashboard to mark as 'Called'."
     )
-    _whatsapp_broadcast(team_numbers, notification, label="Team-Notify")
+    _whatsapp_broadcast(recipient, notification, label="Team-Notify")
 
 
 def _notify_admin_of_new_student(sender_id: str, name: str | None, first_message: str):
@@ -389,8 +418,11 @@ def _notify_team_pre_call(sender_id: str, naam: str, class_label: str, time_str:
     Sends a 15-min-before WhatsApp reminder to TEAM ONLY (not admin).
     Fired by the reminder loop when a lead's scheduled_call_at is approaching.
     """
-    team_numbers = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
-    if not team_numbers:
+    lead = database.get_lead_reminder(sender_id)
+    lead_type = lead.get("lead_type") if lead else None
+    
+    recipient = _get_recipient_for_lead(lead_type)
+    if not recipient:
         return
     notification = (
         f"⏰ *15 min reminder!*\n"
@@ -403,16 +435,58 @@ def _notify_team_pre_call(sender_id: str, naam: str, class_label: str, time_str:
         f"\n"
         f"Get ready — call them on time!"
     )
-    _whatsapp_broadcast(team_numbers, notification, label="Pre-Call")
+    _whatsapp_broadcast(recipient, notification, label="Pre-Call")
 
 
 def _is_team_phone(sender_id: str) -> bool:
     """Returns True if the WhatsApp sender_id matches a configured team number."""
     nums_raw = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
-    if not nums_raw:
+    offline_num = os.getenv("OFFLINE_NOTIFY_NUMBER", "").strip()
+    all_nums = nums_raw
+    if offline_num:
+        all_nums = f"{nums_raw},{offline_num}"
+    if not all_nums.strip():
         return False
-    nums = [n.strip().lstrip("+") for n in nums_raw.split(",") if n.strip()]
+    nums = [n.strip().lstrip("+") for n in all_nums.split(",") if n.strip()]
     return sender_id.lstrip("+") in nums
+
+
+def _update_and_notify_offline_lead(sender_id: str):
+    """
+    Updates the lead's type to Offline in the database and,
+    if they are currently pending, notifies the offline team member.
+    """
+    lead = database.get_lead_reminder(sender_id)
+    if not lead:
+        database.add_lead_reminder(
+            sender_id=sender_id,
+            naam="Unknown",
+            class_label="",
+            phone="+" + sender_id,
+            source="WhatsApp",
+            lead_type="Offline"
+        )
+        lead = database.get_lead_reminder(sender_id)
+
+    old_lead_type = lead.get("lead_type")
+    if old_lead_type != "Offline":
+        database.update_lead_type(sender_id, "Offline")
+        # Notify offline team if status is pending
+        if lead.get("status") == "pending" and _is_team_active():
+            recipient = _get_recipient_for_lead("Offline")
+            if recipient:
+                name_display = (lead.get("naam") or "Unknown").strip()
+                notification = (
+                    f"🔔 *OFFLINE LEAD DETECTED!*\n"
+                    f"\n"
+                    f"Student has requested offline classes/details:\n"
+                    f"👤 *Name:* {name_display}\n"
+                    f"📱 *Number:* +{sender_id}\n"
+                    f"🎓 *Class:* {lead.get('class_label') or 'TBD'}\n"
+                    f"\n"
+                    f"⚡ Please call them to follow up!"
+                )
+                _whatsapp_broadcast(recipient, notification, label="Offline-Notify")
 
 
 def _handle_menu_navigation(sender_id: str, message_text: str, history: list) -> str | None:
@@ -422,6 +496,14 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
     Returns the message to send to the student, or None if it should fall back to AI.
     """
     msg = message_text.strip().lower()
+
+    # Update lead type to Offline and notify offline call handler if student selects any offline option
+    if msg in {
+        "offline classes", "pre-primary (nur-ukg)", "primary (1st-5th)",
+        "junior (6th-8th)", "secondary (9th-10th)", "sr. secondary (11-12)",
+        "register now"
+    }:
+        _update_and_notify_offline_lead(sender_id)
 
     # Normalize message for parsing smart intents
     import re
@@ -537,6 +619,7 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
     # 2. General Intent Detection (Admission / Enroll / Course / Offline / Online)
     # Check offline intent first so queries like "offline classes" aren't matched by the generic "classes" online trigger
     if any(k in msg_clean for k in [" offline class ", " offline classes ", " offline course ", " offline batch ", " offline center ", " kanth center ", " coaching center ", " tuition "]):
+        _update_and_notify_offline_lead(sender_id)
         database.clear_seminar_registration(sender_id)
         prompt = database.get_state("tpl_offline_prompt_text", DEFAULT_TEMPLATES["tpl_offline_prompt_text"])
         options = (
@@ -642,6 +725,7 @@ def _handle_menu_navigation(sender_id: str, message_text: str, history: list) ->
         return f"{prompt}{options}"
 
     if msg == "offline classes":
+        _update_and_notify_offline_lead(sender_id)
         database.clear_seminar_registration(sender_id)
         prompt = database.get_state("tpl_offline_prompt_text", DEFAULT_TEMPLATES["tpl_offline_prompt_text"])
         options = (
@@ -896,11 +980,14 @@ def _is_team_active() -> bool:
 
 def _notify_team_lead_pending(sender_id: str, name: str, class_label: str, mins_waiting: int):
     """
-    Sends a WhatsApp 'have you called?' reminder to TEAM numbers every 5 minutes
+    Sends a WhatsApp 'have you called?' reminder to TEAM numbers or offline call handler every 5 minutes
     until the lead is marked as called.
     """
-    team_numbers = os.getenv("TEAM_NOTIFY_NUMBERS", "").strip()
-    if not team_numbers:
+    lead = database.get_lead_reminder(sender_id)
+    lead_type = lead.get("lead_type") if lead else None
+    
+    recipient = _get_recipient_for_lead(lead_type)
+    if not recipient:
         return
 
     notification = (
@@ -914,7 +1001,7 @@ def _notify_team_lead_pending(sender_id: str, name: str, class_label: str, mins_
         f"📊 Open the dashboard and tap '✓ Mark Called' once done.\n"
         f"🚨 If you don't act, admin will be notified."
     )
-    _whatsapp_broadcast(team_numbers, notification, label="Team-Reminder")
+    _whatsapp_broadcast(recipient, notification, label="Team-Reminder")
 
 load_dotenv()
 
@@ -1301,6 +1388,8 @@ def forgot_password_post(phone_number: str = Form(...)):
     clean_num = ''.join(c for c in phone_number if c.isdigit())
     admin_nums = [n.strip().lstrip('+') for n in os.getenv("ADMIN_NOTIFY_NUMBER", "").split(",") if n.strip()]
     team_nums = [n.strip().lstrip('+') for n in os.getenv("TEAM_NOTIFY_NUMBERS", "").split(",") if n.strip()]
+    offline_nums = [n.strip().lstrip('+') for n in os.getenv("OFFLINE_NOTIFY_NUMBER", "").split(",") if n.strip()]
+    team_nums = team_nums + offline_nums
     
     found_password = None
     role_name = None
@@ -1711,6 +1800,7 @@ async def handle_whatsapp_message(request: Request):
                             if not history:
                                 detected_class = _detect_class(message_text)
                                 detected_source = _detect_source(message_text)
+                                detected_lead_type = _detect_lead_type(message_text)
 
                                 # Create a lead reminder so the team needs to call this student
                                 database.add_lead_reminder(
@@ -1719,6 +1809,7 @@ async def handle_whatsapp_message(request: Request):
                                     class_label=detected_class,
                                     phone="+" + sender_id,
                                     source=detected_source,
+                                    lead_type=detected_lead_type,
                                 )
 
                                 # ADMIN always gets the WhatsApp CC (24h coverage).
@@ -1729,6 +1820,7 @@ async def handle_whatsapp_message(request: Request):
                                     _notify_team_of_new_lead(
                                         sender_id, contact_name, message_text,
                                         class_label=detected_class, source=detected_source,
+                                        lead_type=detected_lead_type,
                                     )
                                     send_web_push(
                                         title="🔔 New Lead — Call required!",
