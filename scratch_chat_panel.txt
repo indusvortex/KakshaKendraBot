@@ -1,0 +1,113 @@
+2498: def _render_chat_panel(sender_id: str, sent: str, error: str) -> str:
+2499:     """Renders the right-hand chat panel for a selected conversation."""
+2500:     if not sender_id:
+2501:         return """
+2502:         <div class="empty-state">
+2503:             <div class="big-icon">💬</div>
+2504:             <h2 style="margin:0;color:#e6edf3">Select a chat to start messaging</h2>
+2505:             <div style="margin-top:8px;font-size:13px">Pick a student from the sidebar to view the conversation.</div>
+2506:         </div>
+2507:         """
+2508: 
+2509:     # Mark as read since admin is now viewing this chat
+2510:     database.mark_chat_read(sender_id)
+2511: 
+2512:     messages = database.get_full_conversation(sender_id)
+2513:     conversations = database.get_all_conversations()
+2514:     chat_info = next((c for c in conversations if c["sender_id"] == sender_id), {})
+2515:     display_name = chat_info.get("display_name") or "Unknown"
+2516: 
+2517:     bubbles = []
+2518:     for msg in messages:
+2519:         is_user = msg["role"] == "user"
+2520:         is_admin_msg = msg["content"].startswith("[ADMIN] ")
+2521:         raw = msg["content"][8:] if is_admin_msg else msg["content"]
+2522: 
+2523:         if is_user:
+2524:             row_class, bubble_class, label = "right", "student", "Student"
+2525:             clean_text, btns = raw, []
+2526:         elif is_admin_msg:
+2527:             row_class, bubble_class, label = "", "admin", "You (manual)"
+2528:             clean_text, btns = raw, []
+2529:         else:
+2530:             row_class, bubble_class, label = "", "bot", "Bot"
+2531:             clean_text, btns = _clean_message_text(raw)
+2532: 
+2533:         content = clean_text.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+2534:         chips_html = ""
+2535:         if btns:
+2536:             chips_html = '<div class="chips">' + "".join(
+2537:                 f'<span class="chip">{b[:40].replace("<","&lt;").replace(">","&gt;")}</span>'
+2538:                 for b in btns
+2539:             ) + "</div>"
+2540: 
+2541:         ts = to_ist(msg['timestamp'], "%d %b · %I:%M %p")
+2542:         bubbles.append(f"""
+2543:         <div class="bubble-row {row_class}">
+2544:             <div class="bubble {bubble_class}">
+2545:                 <div class="meta">{label}</div>
+2546:                 <div class="content">{content}</div>
+2547:                 {chips_html}
+2548:                 <div class="time">{ts}</div>
+2549:             </div>
+2550:         </div>
+2551:         """)
+2552: 
+2553:     bubbles_html = "".join(bubbles) or '<div style="text-align:center;color:#7d8e9c;padding:40px">No messages yet.</div>'
+2554: 
+2555:     banner = ""
+2556:     if sent == "1":
+2557:         banner = '<div class="banner success">✓ Message sent successfully</div>'
+2558:     elif error:
+2559:         err_clean = error.replace("<", "&lt;").replace(">", "&gt;")
+2560:         banner = f'<div class="banner error">✗ {err_clean}</div>'
+2561: 
+2562:     return f"""
+2563:     <div class="main-header">
+2564:         <a href="/admin" class="back-btn" aria-label="Back to chat list">←</a>
+2565:         {_avatar_html(display_name, sender_id, 42)}
+2566:         <div style="flex:1;min-width:0;overflow:hidden">
+2567:             <div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{display_name}</div>
+2568:             <div class="sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">+{sender_id} · {len(messages)} messages</div>
+2569:         </div>
+2570:         <form method="POST" action="/admin/chat/{sender_id}/delete" onsubmit="return confirm('Delete entire chat with {display_name}? This cannot be undone.')" style="margin:0">
+2571:             <button type="submit" title="Delete chat" aria-label="Delete chat" style="background:rgba(220,38,38,0.15);border:1px solid rgba(220,38,38,0.3);color:#ef4444;width:38px;height:38px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s">
+2572:                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+2573:             </button>
+2574:         </form>
+2575:     </div>
+2576:     {banner}
+2577:     <div class="messages" id="messages">
+2578:         {bubbles_html}
+2579:     </div>
+2580:     <div class="composer">
+2581:         <form class="composer-form" method="POST" action="/admin/chat/{sender_id}/send" id="text-form">
+2582:             <button type="button" class="icon-btn attach" id="attach-toggle" title="Attach" aria-label="Attach">
+2583:                 <svg viewBox="0 0 24 24"><path d="M16.5 6.5v10.5a4.5 4.5 0 1 1-9 0V5a3 3 0 1 1 6 0v11.5a1.5 1.5 0 1 1-3 0V6h-1.5v10.5a3 3 0 1 0 6 0V5a4.5 4.5 0 1 0-9 0v12a6 6 0 1 0 12 0V6.5z"/></svg>
+2584:             </button>
+2585:             <div class="attach-menu" id="attach-menu">
+2586:                 <button type="button" onclick="pickFile('image/*')"><span class="icon" style="background:#3b82f6">🖼️</span> Photo</button>
+2587:                 <button type="button" onclick="pickFile('video/*')"><span class="icon" style="background:#ef4444">🎬</span> Video</button>
+2588:                 <button type="button" onclick="pickFile('audio/*')"><span class="icon" style="background:#10b981">🎵</span> Audio</button>
+2589:                 <button type="button" onclick="pickFile('application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt')"><span class="icon" style="background:#f59e0b">📄</span> Document</button>
+2590:             </div>
+2591:             <textarea name="message" placeholder="Message..." required maxlength="4000" id="msg-input"></textarea>
+2592:             <button type="submit" class="icon-btn" title="Send" aria-label="Send">
+2593:                 <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+2594:             </button>
+2595:         </form>
+2596:         <form id="media-form" method="POST" action="/admin/chat/{sender_id}/send-media" enctype="multipart/form-data" style="display:none">
+2597:             <input type="file" name="file" id="media-file" />
+2598:             <input type="hidden" name="caption" id="media-caption" />
+2599:         </form>
+2600:     </div>
+2601:     """
+2602: 
+2603: 
+2604: @app.get("/admin", response_class=HTMLResponse)
+2605: def admin_dashboard(
+2606:     chat: str = "",
+2607:     sent: str = "",
+2608:     error: str = "",
+2609:     user: dict = Depends(verify_user),
+2610: ):

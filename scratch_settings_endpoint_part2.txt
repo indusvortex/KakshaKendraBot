@@ -1,0 +1,200 @@
+3751:                 </div>
+3752: 
+3753:                 <!-- ================= Token Usage ================= -->
+3754:                 <div class="card">
+3755:                     <h3>💰 Token Usage Estimate</h3>
+3756:                     <div class="big">{tokens_used:,}</div>
+3757:                     <div class="small">Approximate cost: ${cost_usd:.4f} (~₹{cost_inr:.2f})</div>
+3758:                     <div class="small" style="margin-top:6px;font-size:11px">Free tiers cover most usage. Cost shown is paid-tier estimate.</div>
+3759:                 </div>
+3760: 
+3761:                 <!-- ================= Provider Status ================= -->
+3762:                 <div class="card" style="grid-column: span 2">
+3763:                     <h3>📡 AI Provider Status</h3>
+3764:                     <div class="row">
+3765:                         <span class="label">Groq <span class="badge" style="background:rgba(82,136,193,0.15);color:#5288c1">{groq_keys} key{"s" if groq_keys != 1 else ""}</span></span>
+3766:                         <span class="val" style="color:{groq_color}">{groq_status}</span>
+3767:                     </div>
+3768:                     <div class="row">
+3769:                         <span class="label">Gemini <span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981">{"On" if has_gemini else "Off"}</span></span>
+3770:                         <span class="val" style="color:{gemini_color}">{gemini_status}</span>
+3771:                     </div>
+3772:                     <div class="row">
+3773:                         <span class="label">Cerebras <span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">{"On" if has_cerebras else "Off"}</span></span>
+3774:                         <span class="val" style="color:{cerebras_color}">{cerebras_status}</span>
+3775:                     </div>
+3776:                     <div class="row">
+3777:                         <span class="label">Failures (Groq · Gemini · Cerebras)</span>
+3778:                         <span class="val">{ai_stats["groq_fail"]} · {ai_stats["gemini_fail"]} · {ai_stats["cerebras_fail"]}</span>
+3779:                     </div>
+3780:                 </div>
+3781: 
+3782:                 <!-- ================= Per-Key Groq Status ================= -->
+3783:                 {_render_groq_keys_card()}
+3784: 
+3785:                 <!-- ================= Students Today ================= -->
+3786:                 <div class="card">
+3787:                     <h3>📥 Students (Last 24h)</h3>
+3788:                     <div class="big">{db_stats["new_students_today"]}</div>
+3789:                     <div class="small">{db_stats["messages_today"]} total messages today</div>
+3790:                 </div>
+3791: 
+3792:                 <!-- ================= All-time stats ================= -->
+3793:                 <div class="card" style="grid-column: span 2">
+3794:                     <h3>📊 Conversation Stats</h3>
+3795:                     <div class="row">
+3796:                         <span class="label">Total students (all time)</span>
+3797:                         <span class="val">{db_stats["total_students"]}</span>
+3798:                     </div>
+3799:                     <div class="row">
+3800:                         <span class="label">Active in last 7 days</span>
+3801:                         <span class="val">{db_stats["active_students_week"]}</span>
+3802:                     </div>
+3803:                     <div class="row">
+3804:                         <span class="label">Total messages stored</span>
+3805:                         <span class="val">{db_stats["total_messages"]:,}</span>
+3806:                     </div>
+3807:                     <div class="row">
+3808:                         <span class="label">Student → Bot messages</span>
+3809:                         <span class="val">{db_stats["total_user_messages"]:,}</span>
+3810:                     </div>
+3811:                     <div class="row">
+3812:                         <span class="label">Bot → Student replies</span>
+3813:                         <span class="val">{db_stats["total_bot_replies"]:,}</span>
+3814:                     </div>
+3815:                     <div class="row">
+3816:                         <span class="label">Messages this week</span>
+3817:                         <span class="val">{db_stats["messages_week"]:,}</span>
+3818:                     </div>
+3819:                     <div class="row">
+3820:                         <span class="label">Database size</span>
+3821:                         <span class="val">{_format_bytes(db_stats["db_size_bytes"])}</span>
+3822:                     </div>
+3823:                 </div>
+3824: 
+3825:                 <!-- ================= Push Notifications ================= -->
+3826:                 <div class="card" style="grid-column: span 2">
+3827:                     <h3>🔔 Push Notifications (Background)</h3>
+3828:                     <p style="font-size:13px;color:#95a3b1;margin:0 0 12px">
+3829:                         Get instant alerts when new students message — even when the dashboard is closed.
+3830:                         Works on PC and mobile (install as PWA for best experience).
+3831:                     </p>
+3832:                     <div style="display:flex;gap:10px;flex-wrap:wrap">
+3833:                         <button onclick="subscribeToPush()" style="background:linear-gradient(135deg,#5288c1,#3a6da4);color:#fff;border:none;padding:10px 18px;border-radius:22px;cursor:pointer;font-weight:600;font-size:13px;box-shadow:0 4px 12px rgba(82,136,193,0.4)">
+3834:                             🔔 Enable Notifications
+3835:                         </button>
+3836:                         <button onclick="testPush()" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);padding:10px 18px;border-radius:22px;cursor:pointer;font-weight:600;font-size:13px">
+3837:                             🧪 Send Test Push
+3838:                         </button>
+3839:                     </div>
+3840:                     <div style="margin-top:14px;font-size:12px;color:#7d8e9c">
+3841:                         💡 <strong>For background alerts on phone:</strong> Browser menu → "Install app" or "Add to Home Screen"
+3842:                     </div>
+3843:                 </div>
+3844: 
+3845:                 <!-- ================= Google Sheets Live Sync ================= -->
+3846:                 <div class="card" style="grid-column: span 2">
+3847:                     <h3>📊 Google Sheets Live Sync {('<span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981">ON</span>' if os.getenv('GOOGLE_SHEETS_WEBHOOK') else '<span class="badge" style="background:rgba(125,142,156,0.15);color:#7d8e9c">OFF</span>')}</h3>
+3848:                     <p style="font-size:13px;color:#95a3b1;margin:0 0 10px">
+3849:                         Auto-sync every student message to a Google Sheet for backup, sharing with team, or analytics.
+3850:                     </p>
+3851:                     <details style="margin-top:8px">
+3852:                         <summary style="cursor:pointer;color:#5288c1;font-size:13px;font-weight:600;padding:6px 0">📖 Setup instructions (one-time, ~5 min)</summary>
+3853:                         <div style="margin-top:10px;padding:14px;background:rgba(0,0,0,0.2);border-radius:10px;border:1px solid rgba(255,255,255,0.05);font-size:12px;line-height:1.6;color:#c5cdd5">
+3854:                             <strong style="color:#fff">Step 1 — Create a Google Sheet</strong><br>
+3855:                             Go to <a href="https://sheets.new" target="_blank" style="color:#5288c1">sheets.new</a>. Add these <strong>7 column headers</strong> in row 1 (CRM-style):<br>
+3856:                             <code style="background:#0e1621;padding:2px 6px;border-radius:4px">Naam | Class | Phone | Source | Status | Next Call | Notes</code>
+3857:                             <br><br>
+3858:                             <strong style="color:#fff">Step 2 — Add Apps Script</strong><br>
+3859:                             In the sheet, click <code>Extensions → Apps Script</code>. Replace all code with the script below and save.
+3860:                             <br><br>
+3861:                             <strong style="color:#fff">Step 3 — Deploy as Web App</strong><br>
+3862:                             Apps Script → <code>Deploy → New deployment → Web app</code>.<br>
+3863:                             • Execute as: <code>Me</code> &nbsp; • Who has access: <code>Anyone</code><br>
+3864:                             Copy the URL (ends with <code>/exec</code>).
+3865:                             <br><br>
+3866:                             <strong style="color:#fff">Step 4 — Add to Railway</strong><br>
+3867:                             Railway → Variables → <code>GOOGLE_SHEETS_WEBHOOK</code> = paste URL → save.
+3868:                             <br><br>
+3869:                             <strong style="color:#fff">Auto-detected fields:</strong>
+3870:                             <ul style="margin:4px 0 0 18px;padding:0">
+3871:                                 <li><strong>Naam</strong> — from WhatsApp profile</li>
+3872:                                 <li><strong>Class</strong> — detected from message ("Class 9", "10th", "Pre-Primary", etc.)</li>
+3873:                                 <li><strong>Phone</strong> — student's number</li>
+3874:                                 <li><strong>Source</strong> — Meta Ad / Referral / Website / WhatsApp / Instagram</li>
+3875:                                 <li><strong>Status</strong> — starts as "New" for new leads</li>
+3876:                                 <li><strong>Next Call & Notes</strong> — you fill these manually; the bot will <em>NEVER overwrite them</em></li>
+3877:                             </ul>
+3878:                             <br>
+3879:                             <strong style="color:#fff">Apps Script code (copy and paste):</strong>
+3880:                             <p style="margin:6px 0;color:#10b981">✨ This version also creates Google Calendar reminders when 'Next Call' is filled — the team phone (logged into the same Google account) gets a popup at the scheduled time.</p>
+3881:                             <pre style="background:#0a1320;padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin-top:6px;color:#a5b4c4">// Cols: A=Naam B=Class C=Phone D=Source E=Status F=Next Call G=Notes
+3882: function doPost(e) {{
+3883:   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+3884:   var d = JSON.parse(e.postData.contents);
+3885: 
+3886:   var normalize = function(p) {{ return String(p || "").replace(/[^0-9]/g, ""); }};
+3887:   var inbound = normalize(d.phone);
+3888: 
+3889:   var lastRow = sheet.getLastRow();
+3890:   var phones = lastRow >= 2
+3891:     ? sheet.getRange(2, 3, lastRow - 1, 1).getValues().map(function(r) {{ return normalize(r[0]); }})
+3892:     : [];
+3893:   var rowIdx = phones.indexOf(inbound);
+3894: 
+3895:   if (rowIdx === -1) {{
+3896:     sheet.appendRow([
+3897:       d.naam || "", d.class || "", "+" + inbound,
+3898:       d.source || "WhatsApp", d.status || "New",
+3899:       d.next_call || "", d.notes || ""
+3900:     ]);
+3901:     var newRow = sheet.getLastRow();
+3902:     sheet.getRange(newRow, 3).setNumberFormat("@").setValue("+" + inbound);
+3903:   }} else {{
+3904:     var sheetRow = rowIdx + 2;
+3905:     if (d.naam)      sheet.getRange(sheetRow, 1).setValue(d.naam);
+3906:     if (d.class)     sheet.getRange(sheetRow, 2).setValue(d.class);
+3907:     sheet.getRange(sheetRow, 3).setNumberFormat("@").setValue("+" + inbound);
+3908:     if (d.source)    sheet.getRange(sheetRow, 4).setValue(d.source);
+3909:     if (d.status)    sheet.getRange(sheetRow, 5).setValue(d.status);
+3910:     if (d.next_call) sheet.getRange(sheetRow, 6).setValue(d.next_call);
+3911:     if (d.notes)     sheet.getRange(sheetRow, 7).setValue(d.notes);
+3912:   }}
+3913: 
+3914:   // Auto-create a Calendar reminder if Next Call has a parseable time
+3915:   if (d.next_call) {{
+3916:     try {{ createLeadCallReminder(d, inbound); }} catch (err) {{ Logger.log(err); }}
+3917:   }}
+3918: 
+3919:   return ContentService.createTextOutput(JSON.stringify({{ok: true}})).setMimeType(ContentService.MimeType.JSON);
+3920: }}
+3921: 
+3922: function parseNextCallTime(text) {{
+3923:   if (!text) return null;
+3924:   text = String(text).toLowerCase().trim();
+3925:   var now = new Date();
+3926:   var d = new Date(now.getTime());
+3927: 
+3928:   // Day modifiers
+3929:   if (text.indexOf("parso") !== -1 || text.indexOf("day after") !== -1) {{
+3930:     d.setDate(d.getDate() + 2);
+3931:   }} else if (text.indexOf("kal") !== -1 || text.indexOf("tomorrow") !== -1) {{
+3932:     d.setDate(d.getDate() + 1);
+3933:   }} else if (text.indexOf("aaj") !== -1 || text.indexOf("today") !== -1) {{
+3934:     /* today */
+3935:   }}
+3936: 
+3937:   // Time match: 5pm / 5 PM / 5:30 pm / 17:00 / 5
+3938:   var m = text.match(/(\\d{{1,2}})(?:[:.](\\d{{2}}))?\\s*(am|pm)?/);
+3939:   if (!m) {{ d.setHours(12, 0, 0, 0); return d; }}
+3940:   var h = parseInt(m[1], 10);
+3941:   var mm = parseInt(m[2] || "0", 10);
+3942:   var ampm = m[3];
+3943:   if (ampm === "pm" && h < 12) h += 12;
+3944:   if (ampm === "am" && h === 12) h = 0;
+3945:   // If no am/pm and hour <= 7, default to PM (afternoon callback is more common)
+3946:   if (!ampm && h >= 1 && h <= 7) h += 12;
+3947: 
+3948:   d.setHours(h, mm, 0, 0);
+3949:   // If the time is in the past (today already passed), bump to tomorrow
+3950:   if (d.getTime() < now.getTime()) d.setDate(d.getDate() + 1);

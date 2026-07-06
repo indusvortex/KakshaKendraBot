@@ -1,0 +1,186 @@
+605: 
+606: 
+607: # ============================================================
+608: # Bounce Back Drip — async task triggered when student taps Enroll Now
+609: # ============================================================
+610: 
+611: async def _bounce_back_drip_task(sender_id: str):
+612:     """
+613:     Drip sequence launched after student taps 'Enroll Now' on Bounce Back Batch.
+614:     Step 1: Wait 30s → send promo code message
+615:     Step 2: Wait 60s more → send YES/NO purchase check
+616:     """
+617:     import asyncio
+618:     BOUNCE_BACK_ENROLL_URL = "https://www.kakshakendra.com/bounceback--12"
+619: 
+620:     # --- Step 1: Wait 30 seconds, then send promo ---
+621:     await asyncio.sleep(30)
+622:     record = database.get_bounce_back_record(sender_id)
+623:     if not record or record.get("purchased"):
+624:         return  # Student already purchased or record gone
+625:     promo_msg = (
+626:         "🤔 *Still thinking? Humara special offer sirf aapke liye!*\n\n"
+627:         "Apply Promo Code at checkout:\n\n"
+628:         "🎟️ *RTCLASS12*\n\n"
+629:         "Get *FLAT ₹1000/- OFF!* 🎉\n"
+630:         "Original Price: ~~₹2499~~ → *Only ₹1499/-*\n\n"
+631:         "Offer limited — enroll abhi! 👇"
+632:     )
+633:     send_whatsapp_message(sender_id, promo_msg)
+634:     database.save_message(sender_id, "assistant", promo_msg)
+635:     database.mark_bounce_back_promo_sent(sender_id)
+636:     print(f"[BounceBackDrip] Promo sent to +{sender_id}")
+637: 
+638:     # --- Step 2: Wait 60 more seconds, then ask YES/NO ---
+639:     await asyncio.sleep(60)
+640:     record = database.get_bounce_back_record(sender_id)
+641:     if not record or record.get("purchased"):
+642:         return
+643:     check_msg = (
+644:         "📋 Kya aapne course purchase kar liya?\n\n"
+645:         "[OPTIONS]\n"
+646:         "✅ Yes, I Purchased!\n"
+647:         "❌ Not Yet\n"
+648:         "[/OPTIONS]"
+649:     )
+650:     send_whatsapp_message(sender_id, check_msg)
+651:     database.save_message(sender_id, "assistant", check_msg)
+652:     database.mark_bounce_back_check_sent(sender_id)
+653:     print(f"[BounceBackDrip] Purchase check sent to +{sender_id}")
+654: 
+655: 
+656: async def reminder_loop():
+657:     """
+658:     Background loop that:
+659:     - Re-pushes pending lead reminders to TEAM every 5 minutes.
+660:     - Escalates to SUPER_ADMIN if a lead has been waiting > 2 minutes
+661:       and no team member has responded yet.
+662:     - Sends 4-hour Bounce Back drip reminders to students who haven't purchased.
+663:     Runs forever in the background.
+664:     """
+665:     import asyncio
+666:     REMINDER_INTERVAL_SECONDS = 300   # 5 minutes between team pushes
+667:     ESCALATE_AFTER_SECONDS = 120      # 2 minutes -> notify admin
+668:     POLL_EVERY_SECONDS = 30
+669: 
+670:     while True:
+671:         try:
+672:             # === A. Pre-call reminders (15 min before scheduled callback) ===
+673:             # Fires WhatsApp to TEAM only when their saved next_call time is within
+674:             # the next 16 minutes and they haven't been pre-reminded yet.
+675:             if _is_team_active():
+676:                 for lead in database.get_upcoming_calls_to_remind(window_minutes=16):
+677:                     try:
+678:                         sched_iso = lead.get("scheduled_call_at")
+679:                         sched_dt = datetime.strptime(sched_iso, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+680:                         sched_ist = sched_dt.astimezone(IST).strftime("%I:%M %p")
+681:                     except Exception:
+682:                         sched_ist = lead.get("next_call") or "soon"
+683: 
+684:                     _notify_team_pre_call(
+685:                         sender_id=lead["sender_id"],
+686:                         naam=lead.get("naam") or "Lead",
+687:                         class_label=lead.get("class_label") or "",
+688:                         time_str=sched_ist,
+689:                     )
+690:                     database.mark_pre_call_reminded(lead["sender_id"])
+691:                     print(f"[Pre-Call] Reminded team about +{lead['sender_id']} (call at {sched_ist} IST)")
+692: 
+693:             # === B. Standard pending-lead reminders (5-min cycle) ===
+694:             pending = database.get_pending_lead_reminders()
+695:             now_utc = datetime.now(timezone.utc)
+696:             for lead in pending:
+697:                 sender_id = lead["sender_id"]
+698:                 naam = lead.get("naam") or "Unknown"
+699:                 class_label = lead.get("class_label") or ""
+700: 
+701:                 # Parse timestamps stored as SQLite UTC strings
+702:                 def _parse(ts: str | None):
+703:                     if not ts:
+704:                         return None
+705:                     try:
+706:                         return datetime.strptime(
+707:                             ts.split(".")[0], "%Y-%m-%d %H:%M:%S"
+708:                         ).replace(tzinfo=timezone.utc)
+709:                     except Exception:
+710:                         return None
+711: 
+712:                 last_remind = _parse(lead.get("last_reminded_at"))
+713:                 admin_notified = _parse(lead.get("admin_notified_at"))
+714:                 created = _parse(lead.get("created_at")) or now_utc
+715: 
+716:                 age_since_last_remind = (now_utc - (last_remind or created)).total_seconds()
+717:                 age_since_creation = (now_utc - created).total_seconds()
+718: 
+719:                 # 1. Every 5 minutes: push + WhatsApp ping to BOTH team AND admin —
+720:                 #    but ONLY when team is logged in. (When team is offline,
+721:                 #    we don't spam admin all night — they got the initial new-lead
+722:                 #    alert which is 24h. The 5-min cycle is a "team is supposed
+723:                 #    to be working" signal.)
+724:                 if last_remind is None or age_since_last_remind >= REMINDER_INTERVAL_SECONDS:
+725:                     if _is_team_active():
+726:                         mins_waiting = int(age_since_creation / 60)
+727: 
+728:                         # Web push to team browsers (real-time)
+729:                         send_web_push(
+730:                             title="📞 Reminder — call this lead!",
+731:                             body=f"{naam} ({class_label or 'class TBD'}) — still pending",
+732:                             url=f"/admin?chat={sender_id}",
+733:                             tag=f"remind-{sender_id}",
+734:                             role="team",
+735:                         )
+736:                         # WhatsApp reminder to TEAM ("have you called yet?")
+737:                         _notify_team_lead_pending(sender_id, naam, class_label, mins_waiting)
+738: 
+739:                         # WhatsApp CC to ADMIN (only fires while team is logged in)
+740:                         _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
+741: 
+742:                         database.mark_lead_reminded(sender_id)
+743:                     # If team is logged out: skip 5-min reminders entirely.
+744:                     # Admin already got the initial new-lead WhatsApp (24h coverage).
+745: 
+746:                 # 2. Escalate to admin if not handled in 2 minutes
+747:                 if admin_notified is None and age_since_creation >= ESCALATE_AFTER_SECONDS:
+748:                     send_web_push(
+749:                         title="🚨 ESCALATION — Team didn't call!",
+750:                         body=f"{naam} ({class_label or 'class TBD'}) — waiting >2 min",
+751:                         url=f"/admin?chat={sender_id}",
+752:                         tag=f"escalate-{sender_id}",
+753:                         role="super_admin",
+754:                     )
+755:                     # WhatsApp escalation to admin
+756:                     mins_waiting = int(age_since_creation / 60)
+757:                     _notify_admin_lead_pending(sender_id, naam, class_label, mins_waiting)
+758:                     database.mark_lead_admin_notified(sender_id)
+759: 
+760:             # === C. Bounce Back 4-hour drip reminders ===
+761:             for drip in database.get_bounce_back_drip_due():
+762:                 sid = drip["sender_id"]
+763:                 try:
+764:                     reminder_num = drip["reminder_count"] + 1
+765:                     reminder_msg = (
+766:                         f"🔥 *Bounce Back Batch — Reminder #{reminder_num}*\n\n"
+767:                         "\"Fail nahi hone dunga!\" — Rajat Sir\n\n"
+768:                         "✅ Zero se padhai, har concept clear hoga ✨\n"
+769:                         "✅ Sirf wahi padhenge jo RT exam mein aayega\n"
+770:                         "✅ Rajat Sir ki guarantee — 100% Pass!\n\n"
+771:                         "💰 *Discounted Fee: Sirf ₹1499/-*\n"
+772:                         "(Use code *RTCLASS12* at checkout)\n\n"
+773:                         "Aaj hi enroll karo! 👇\n"
+774:                         "https://www.kakshakendra.com/bounceback--12"
+775:                     )
+776:                     send_whatsapp_message(sid, reminder_msg)
+777:                     database.save_message(sid, "assistant", reminder_msg)
+778:                     database.mark_bounce_back_reminder_sent(sid)
+779:                     print(f"[BounceBackDrip] 4hr reminder #{reminder_num} sent to +{sid}")
+780:                 except Exception as re:
+781:                     print(f"[BounceBackDrip] Reminder error for +{sid}: {re}")
+782: 
+783:         except Exception as e:
+784:             print(f"[ReminderLoop] error: {e}")
+785:         await asyncio.sleep(POLL_EVERY_SECONDS)
+786: 
+787: 
+788: @asynccontextmanager
+789: async def lifespan(app: FastAPI):
+790:     import asyncio

@@ -1,0 +1,251 @@
+3500:         </div>
+3501:         {''.join(rows)}
+3502:     </div>
+3503:     """
+3504: 
+3505: 
+3506: @app.get("/admin/settings", response_class=HTMLResponse)
+3507: def admin_settings(user: str = Depends(verify_admin)):
+3508:     """Bot health, AI provider stats, and database statistics."""
+3509:     db_stats = database.get_stats()
+3510: 
+3511:     # Uptime
+3512:     uptime_seconds = (datetime.now(timezone.utc) - SERVER_STARTED_AT).total_seconds()
+3513:     uptime_str = _format_duration(uptime_seconds)
+3514:     started_at_ist = to_ist(
+3515:         SERVER_STARTED_AT.strftime("%Y-%m-%d %H:%M:%S"),
+3516:         "%d %b %Y, %I:%M %p",
+3517:     )
+3518: 
+3519:     # AI provider key counts
+3520:     groq_keys = len(_get_groq_clients())
+3521:     has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+3522:     has_cerebras = bool(os.getenv("CEREBRAS_API_KEY"))
+3523: 
+3524:     # Provider health (online if last success within 1 hour)
+3525:     def provider_status(last_iso: str | None) -> tuple[str, str]:
+3526:         if not last_iso:
+3527:             return ("⚪ Idle", "#7d8e9c")
+3528:         try:
+3529:             last = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))
+3530:             mins_ago = (datetime.now(timezone.utc) - last).total_seconds() / 60
+3531:             if mins_ago < 60:
+3532:                 return (f"🟢 Healthy ({int(mins_ago)}m ago)", "#10b981")
+3533:             if mins_ago < 1440:
+3534:                 return (f"🟡 Recent ({int(mins_ago / 60)}h ago)", "#f59e0b")
+3535:             return (f"🔴 Stale ({int(mins_ago / 1440)}d ago)", "#ef4444")
+3536:         except Exception:
+3537:             return ("⚪ Unknown", "#7d8e9c")
+3538: 
+3539:     groq_status, groq_color = provider_status(ai_stats.get("last_groq_success_at"))
+3540:     gemini_status, gemini_color = provider_status(ai_stats.get("last_gemini_success_at"))
+3541:     cerebras_status, cerebras_color = provider_status(ai_stats.get("last_cerebras_success_at"))
+3542: 
+3543:     # Token cost estimate (very rough): Groq paid ~$0.59/M input, $0.79/M output
+3544:     # Free tier hits limit at 100k/day. Use 0 cost while within free tier estimate.
+3545:     tokens_used = ai_stats.get("tokens_used_estimate", 0)
+3546:     cost_usd = tokens_used / 1_000_000 * 0.7  # rough average
+3547:     cost_inr = cost_usd * 83  # approx exchange rate
+3548: 
+3549:     # AI usage breakdown for the bar chart
+3550:     total_ai = (
+3551:         ai_stats["groq_success"]
+3552:         + ai_stats["gemini_success"]
+3553:         + ai_stats["cerebras_success"]
+3554:     ) or 1
+3555:     groq_pct = (ai_stats["groq_success"] / total_ai) * 100
+3556:     gemini_pct = (ai_stats["gemini_success"] / total_ai) * 100
+3557:     cerebras_pct = (ai_stats["cerebras_success"] / total_ai) * 100
+3558: 
+3559:     return f"""
+3560:     <!DOCTYPE html>
+3561:     <html>
+3562:     <head>
+3563:         <title>Settings · Kaksha Kendra Bot</title>
+3564:         <meta charset="utf-8"/>
+3565:         <meta name="viewport" content="width=device-width, initial-scale=1"/>
+3566:         <meta name="theme-color" content="#5288c1"/>
+3567:         <link rel="icon" type="image/png" href="/static/favicon.png">
+3568:         <link rel="manifest" href="/manifest.json"/>
+3569:         <meta http-equiv="refresh" content="30">
+3570:         <style>{_ADMIN_CSS}
+3571:             /* Override the dashboard's no-scroll body for settings page */
+3572:             html, body {{ height: auto !important; overflow: auto !important; }}
+3573:             body {{ min-height: 100vh; min-height: 100dvh; padding-bottom: 40px; }}
+3574:             .settings-wrap {{ padding: 20px; max-width: 1100px; margin: 0 auto; width: 100%; }}
+3575: 
+3576:             /* Sticky top bar — stays at top while scrolling */
+3577:             .top-bar {{
+3578:                 position: sticky;
+3579:                 top: 0;
+3580:                 z-index: 50;
+3581:                 background: rgba(14, 22, 33, 0.85);
+3582:                 backdrop-filter: blur(30px) saturate(180%);
+3583:                 -webkit-backdrop-filter: blur(30px) saturate(180%);
+3584:                 margin: -20px -20px 0;
+3585:                 padding: 14px 20px;
+3586:                 border-bottom: 1px solid rgba(255,255,255,0.05);
+3587:             }}
+3588: 
+3589:             /* === MOBILE — phone-first redesign === */
+3590:             @media (max-width: 800px) {{
+3591:                 body {{ padding-bottom: 60px; }}
+3592:                 .settings-wrap {{ padding: 0; }}
+3593:                 .top-bar {{
+3594:                     margin: 0;
+3595:                     padding: 14px 16px;
+3596:                     border-radius: 0;
+3597:                 }}
+3598:                 .top-bar h1 {{ font-size: 17px; font-weight: 600; }}
+3599:                 .nav-link {{
+3600:                     padding: 8px 14px;
+3601:                     font-size: 12px;
+3602:                     border-radius: 18px;
+3603:                 }}
+3604: 
+3605:                 /* Force single-column on phones, even cards that span 2 */
+3606:                 .settings-grid {{
+3607:                     grid-template-columns: 1fr !important;
+3608:                     gap: 12px;
+3609:                     padding: 14px;
+3610:                     margin-top: 6px !important;
+3611:                 }}
+3612:                 .card[style*="span"] {{ grid-column: 1 !important; }}
+3613: 
+3614:                 /* Cards: tighter, snappier, native-app feel */
+3615:                 .card {{
+3616:                     padding: 16px;
+3617:                     border-radius: 16px;
+3618:                 }}
+3619:                 .card:hover {{ transform: none; }}  /* No hover transform on touch */
+3620:                 .card h3 {{
+3621:                     font-size: 11px;
+3622:                     margin-bottom: 10px;
+3623:                     letter-spacing: 0.08em;
+3624:                 }}
+3625:                 .card .big {{ font-size: 26px; line-height: 1.0; }}
+3626:                 .card .small {{ font-size: 12px; }}
+3627: 
+3628:                 /* Rows: stack values cleanly, larger touch targets */
+3629:                 .row {{
+3630:                     padding: 12px 0;
+3631:                     flex-wrap: wrap;
+3632:                     gap: 4px;
+3633:                 }}
+3634:                 .row .label {{ font-size: 13px; }}
+3635:                 .row .val {{ font-size: 13px; }}
+3636: 
+3637:                 /* Buttons in cards stack on tiny screens */
+3638:                 .card a, .card button {{
+3639:                     min-height: 44px;  /* iOS touch-target minimum */
+3640:                     width: 100%;
+3641:                     justify-content: center;
+3642:                 }}
+3643:                 .card div[style*="display:flex;gap:10px"] {{
+3644:                     flex-direction: column;
+3645:                 }}
+3646: 
+3647:                 /* Quick links — touchable rows */
+3648:                 .card .row a {{
+3649:                     width: auto;
+3650:                     min-height: auto;
+3651:                 }}
+3652: 
+3653:                 /* Visual provider bar — slimmer */
+3654:                 .bar {{ height: 6px; }}
+3655: 
+3656:                 /* Bottom footer */
+3657:                 body > div > div:last-child {{ font-size: 11px; padding: 0 16px; }}
+3658:             }}
+3659: 
+3660:             /* Very small phones (iPhone SE etc.) */
+3661:             @media (max-width: 380px) {{
+3662:                 .top-bar h1 {{ font-size: 15px; }}
+3663:                 .card {{ padding: 14px; }}
+3664:                 .card .big {{ font-size: 22px; }}
+3665:             }}
+3666:             .settings-grid {{
+3667:                 display: grid;
+3668:                 grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+3669:                 gap: 14px;
+3670:                 margin-top: 18px;
+3671:             }}
+3672:             .card {{
+3673:                 background: rgba(23, 33, 43, 0.55);
+3674:                 backdrop-filter: blur(40px) saturate(180%);
+3675:                 -webkit-backdrop-filter: blur(40px) saturate(180%);
+3676:                 border: 1px solid rgba(255,255,255,0.06);
+3677:                 border-radius: 14px;
+3678:                 padding: 18px;
+3679:                 box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+3680:                 transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+3681:             }}
+3682:             .card:hover {{ transform: translateY(-3px); }}
+3683:             .card h3 {{
+3684:                 margin: 0 0 12px;
+3685:                 font-size: 13px;
+3686:                 color: #95a3b1;
+3687:                 font-weight: 600;
+3688:                 text-transform: uppercase;
+3689:                 letter-spacing: 0.05em;
+3690:             }}
+3691:             .card .big {{ font-size: 28px; font-weight: 700; color: #fff; line-height: 1.1; }}
+3692:             .card .small {{ font-size: 13px; color: #95a3b1; margin-top: 4px; }}
+3693:             .row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }}
+3694:             .row:last-child {{ border-bottom: none; }}
+3695:             .row .label {{ color: #95a3b1; font-size: 13px; }}
+3696:             .row .val {{ color: #fff; font-weight: 600; font-size: 13px; }}
+3697:             .bar {{
+3698:                 height: 8px;
+3699:                 background: rgba(255,255,255,0.05);
+3700:                 border-radius: 4px;
+3701:                 overflow: hidden;
+3702:                 display: flex;
+3703:                 margin-top: 8px;
+3704:             }}
+3705:             .bar > div {{ height: 100%; transition: width 0.5s; }}
+3706:             .badge {{ display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; }}
+3707:             .top-bar {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 8px; }}
+3708:             .top-bar h1 {{ margin: 0; font-size: 22px; }}
+3709:             .nav-link {{
+3710:                 color: #5288c1;
+3711:                 background: rgba(82,136,193,0.1);
+3712:                 border: 1px solid rgba(82,136,193,0.2);
+3713:                 padding: 8px 14px;
+3714:                 border-radius: 20px;
+3715:                 text-decoration: none;
+3716:                 font-size: 13px;
+3717:             }}
+3718:         </style>
+3719:     </head>
+3720:     <body>
+3721:         <div class="settings-wrap">
+3722:             <div class="top-bar">
+3723:                 <h1>⚙️ Bot Health & Settings</h1>
+3724:                 <a href="/admin" class="nav-link">← Back to dashboard</a>
+3725:             </div>
+3726: 
+3727:             <div class="settings-grid">
+3728: 
+3729:                 <!-- ================= UPTIME ================= -->
+3730:                 <div class="card">
+3731:                     <h3>🟢 Server Uptime</h3>
+3732:                     <div class="big">{uptime_str}</div>
+3733:                     <div class="small">Started: {started_at_ist} IST</div>
+3734:                 </div>
+3735: 
+3736:                 <!-- ================= AI Calls ================= -->
+3737:                 <div class="card">
+3738:                     <h3>🤖 AI Calls (Since Restart)</h3>
+3739:                     <div class="big">{ai_stats["total_calls"]}</div>
+3740:                     <div class="small">{ai_stats["all_failed"]} fully failed · {total_ai} succeeded</div>
+3741:                     <div class="bar">
+3742:                         <div style="width:{groq_pct}%;background:#5288c1" title="Groq"></div>
+3743:                         <div style="width:{gemini_pct}%;background:#10b981" title="Gemini"></div>
+3744:                         <div style="width:{cerebras_pct}%;background:#f59e0b" title="Cerebras"></div>
+3745:                     </div>
+3746:                     <div class="small" style="display:flex;gap:12px;margin-top:8px">
+3747:                         <span><span style="color:#5288c1">●</span> Groq {ai_stats["groq_success"]}</span>
+3748:                         <span><span style="color:#10b981">●</span> Gemini {ai_stats["gemini_success"]}</span>
+3749:                         <span><span style="color:#f59e0b">●</span> Cerebras {ai_stats["cerebras_success"]}</span>
+3750:                     </div>

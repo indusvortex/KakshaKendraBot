@@ -1997,6 +1997,7 @@ a { color: #5288c1; text-decoration: none; }
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0;
     box-shadow:
         4px 0 30px rgba(0,0,0,0.4),
         inset 1px 0 0 rgba(255,255,255,0.04);
@@ -2063,7 +2064,7 @@ a { color: #5288c1; text-decoration: none; }
 }
 .search-box input::placeholder { color: #7d8e9c; }
 
-.chat-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.chat-list { flex: 1; overflow-y: auto; padding: 4px 0; min-height: 0; }
 
 .chat-item {
     display: flex;
@@ -2547,8 +2548,18 @@ a { color: #5288c1; text-decoration: none; }
     .back-btn { display: inline-flex !important; }
 
     /* Sidebar header — slightly tighter */
-    .sidebar-header { padding: 14px 14px 12px; }
-    .sidebar-title { font-size: 17px; }
+    .sidebar-header { padding: 10px 14px 8px; }
+    .sidebar-title { font-size: 15px; }
+
+    /* ===== PENDING PANEL MOBILE — compact & capped ===== */
+    .pending-panel { padding: 8px 10px; }
+    .pending-leads-scroll { max-height: 35vh; }
+    .pending-panel-title { font-size: 10px; margin-bottom: 6px; }
+    .pending-lead { padding: 6px 8px; margin-bottom: 4px; border-radius: 6px; }
+    .pending-lead .name { font-size: 12px; }
+    .pending-lead .meta { font-size: 10px; margin: 1px 0 4px; }
+    .pending-lead .btn { padding: 5px 6px; font-size: 10px; border-radius: 6px; }
+    .btn-add-seminar { padding: 6px 10px; font-size: 11px; }
 
     /* Chat header sticks to top */
     .main-header {
@@ -2580,9 +2591,9 @@ a { color: #5288c1; text-decoration: none; }
 
     /* Chat-list items — slightly tighter for phone */
     .chat-item { padding: 10px 12px; margin: 1px 4px; }
-    .chat-item .avatar { width: 46px; height: 46px; font-size: 15px; }
-    .chat-item .name { font-size: 14px; }
-    .chat-item .preview { font-size: 13px; }
+    .chat-item .avatar { width: 42px; height: 42px; font-size: 14px; }
+    .chat-item .name { font-size: 13px; }
+    .chat-item .preview { font-size: 12px; }
 
     /* Attach menu — full-width-ish on mobile */
     .attach-menu {
@@ -2594,6 +2605,10 @@ a { color: #5288c1; text-decoration: none; }
 
     /* Banners */
     .banner { margin: 8px 12px 0; padding: 9px 13px; font-size: 12px; }
+
+    /* Search box tighter */
+    .search-box { padding: 6px 10px; }
+    .search-box input { padding: 8px 12px; font-size: 13px; }
 }
 
 /* ===== PENDING LEADS PANEL (sidebar) ===== */
@@ -2602,7 +2617,20 @@ a { color: #5288c1; text-decoration: none; }
     border-bottom: 1px solid rgba(255,255,255,0.06);
     padding: 10px 12px;
     border-left: 3px solid #f59e0b;
+    flex-shrink: 0;
 }
+.pending-leads-scroll {
+    max-height: 40vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.pending-panel.collapsed .pending-leads-scroll { display: none; }
+.pending-panel-toggle {
+    background: none; border: none; color: #f59e0b; cursor: pointer;
+    font-size: 14px; padding: 2px 6px; border-radius: 4px;
+    transition: transform 0.2s;
+}
+.pending-panel.collapsed .pending-panel-toggle { transform: rotate(-90deg); }
 .btn-new-lead {
     background: rgba(245, 158, 11, 0.15);
     color: #f59e0b;
@@ -2692,10 +2720,10 @@ a { color: #5288c1; text-decoration: none; }
 .pending-lead {
     background: rgba(0,0,0,0.25);
     border: 1px solid rgba(245,158,11,0.2);
-    border-radius: 10px;
-    padding: 10px;
-    margin-bottom: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 .pending-lead:last-child { margin-bottom: 0; }
 .pending-lead .name { font-weight: 600; color: #fff; font-size: 13px; }
@@ -2898,12 +2926,17 @@ def _render_pending_leads_panel() -> str:
     extra_msg = f' · <span style="color:#fff">+{extra_count} more</span>' if extra_count > 0 else ''
 
     return f"""
-    <div id="pending-panel-wrapper"><div class="pending-panel">
+    <div id="pending-panel-wrapper"><div class="pending-panel" id="pendingPanel">
         <div class="pending-panel-title" style="display:flex; justify-content:space-between; align-items:center;">
-            <span>📞 Pending Calls ({len(leads)}){extra_msg}</span>
+            <span style="display:flex;align-items:center;gap:6px">
+                <button class="pending-panel-toggle" onclick="togglePendingPanel()" title="Collapse/Expand">▼</button>
+                📞 Pending Calls ({len(leads)}){extra_msg}
+            </span>
             <button class="btn-new-lead" onclick="openNewLeadModal()">+ Add Lead</button>
         </div>
-        {''.join(items)}
+        <div class="pending-leads-scroll">
+            {''.join(items)}
+        </div>
     </div></div>
     """
 
@@ -3113,6 +3146,19 @@ def admin_dashboard(
         </div>
 
         <script>
+            // Toggle pending panel collapse/expand
+            function togglePendingPanel() {{
+                const panel = document.getElementById('pendingPanel');
+                if (panel) panel.classList.toggle('collapsed');
+            }}
+            // Auto-collapse on small screens
+            if (window.innerWidth <= 800) {{
+                const panel = document.getElementById('pendingPanel');
+                if (panel && panel.querySelectorAll('.pending-lead').length > 3) {{
+                    panel.classList.add('collapsed');
+                }}
+            }}
+
             // Live-filter sidebar
             function filterChats(q) {{
                 q = q.toLowerCase().trim();
