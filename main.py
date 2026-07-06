@@ -5892,3 +5892,35 @@ def api_lead_dismiss(sender_id: str, user: dict = Depends(verify_admin)):
     database.mark_lead_called(sender_id=sender_id, status="dismissed")
     print(f"[Lead] +{sender_id} dismissed by admin {user['username']}")
     return {"status": "dismissed"}
+
+
+# ============================================================
+# ANDROID APP NOTIFICATION POLLING ENDPOINT
+# ============================================================
+
+@app.get("/api/app/notifications")
+def api_app_notifications(user: dict = Depends(verify_user)):
+    """
+    Lightweight endpoint for the Android app background service to poll.
+    Returns the count of pending leads and the latest lead info for notification display.
+    """
+    leads = database.get_pending_lead_reminders()
+    count = len(leads)
+    latest = None
+    if leads:
+        l = leads[0]
+        latest = {
+            "name": l.get("naam") or "Unknown",
+            "class": l.get("class_label") or "TBD",
+            "source": l.get("source") or "WhatsApp",
+            "sender_id": l.get("sender_id"),
+            "created_at": l.get("created_at"),
+        }
+    # Also return unread chat count
+    conversations = database.get_all_conversations()
+    unread = sum(1 for c in conversations if c.get("unread_count", 0) > 0)
+    return {
+        "pending_leads": count,
+        "unread_chats": unread,
+        "latest_lead": latest,
+    }
