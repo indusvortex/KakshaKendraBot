@@ -1032,13 +1032,21 @@ def _check_team(username, password) -> bool:
     )
 
 def get_current_user(request: Request):
+    # Try cookie auth first (web dashboard)
     token = request.cookies.get("auth_token")
+    # Try bearer token (mobile app)
+    if not token:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
     if not token:
         raise NotAuthenticatedException()
     role = database.get_state(f"session_{token}")
     if not role:
         raise NotAuthenticatedException()
-    return {"username": role.capitalize(), "role": role}
+    # For mobile sessions, we also store username
+    username = database.get_state(f"session_user_{token}") or role.replace("_", " ").title()
+    return {"username": username, "role": role}
 
 def verify_user(user: dict = Depends(get_current_user)) -> dict:
     """Allows both super-admin and team to access dashboard."""
@@ -5924,3 +5932,113 @@ def api_app_notifications(user: dict = Depends(verify_user)):
         "unread_chats": unread,
         "latest_lead": latest,
     }
+
+# ============================================================
+# MOBILE APP API ENDPOINTS
+# ============================================================
+
+class AppLoginPayload(BaseModel):
+    username: str
+    password: str
+
+@app.post("/api/app/login")
+def api_app_login(payload: AppLoginPayload):
+    """JSON login for mobile app. Returns a bearer token."""
+    username = payload.username
+    password = payload.password
+    if _check_admin(username, password):
+        role = "super_admin"
+    elif _check_team(username, password):
+        role = "team"
+    else:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    token = secrets.token_hex(32)
+    database.set_state(f"session_{token}", role)
+    database.set_state(f"session_user_{token}", username)
+    return {
+        "token": token,
+        "user": {"username": username, "role": role},
+    }
+
+
+@app.get("/api/app/messages/{sender_id}")
+def api_app_messages(sender_id: str, user: dict = Depends(verify_user)):
+    """Pure JSON messages endpoint for mobile app."""
+    messages = database.get_full_conversation(sender_id)
+    conversations = database.get_all_conversations()
+    chat_info = next((c for c in conversations if c["sender_id"] == sender_id), {})
+    display_name = chat_info.get("display_name") or "Unknown"
+    
+    result = []
+    for idx, msg in enumerate(messages):
+        is_admin_msg = msg["content"].startswith("[ADMIN] ")
+        raw = msg["content"][8:] if is_admin_msg else msg["content"]
+        
+        # Clean the text: remove [OPTIONS]...[/OPTIONS] and [CTA_URL...]
+        import re
+        clean = re.sub(r'\[OPTIONS\][\s\S]*?\[/OPTIONS\]', '', raw)
+        clean = re.sub(r'\[CTA_URL[^\]]*\]', '', clean).strip()
+        
+        if msg["role"] == "user":
+            role = "student"
+        elif is_admin_msg:
+            role = "admin"
+        else:
+            role = "bot"
+        
+        # Parse timestamp
+        time_str = ""
+        if msg.get("timestamp"):
+            time_str = to_ist(msg["timestamp"], "%I:%M %p")
+        
+        result.append({
+            "id": f"m-{idx}",
+            "role": role,
+            "text": clean,
+            "time": time_str,
+            "is_admin": role == "admin",
+        })
+    
+    # Mark as read since the user is viewing
+    database.mark_chat_read(sender_id)
+    
+    return {
+        "messages": result,
+        "display_name": display_name,
+        "sender_id": sender_id,
+    }
+
+
+@app.post("/api/app/send")
+async def api_app_send(request: Request, user: dict = Depends(verify_user)):
+    """Send a message from the mobile app."""
+    body = await request.json()
+    sender_id = body.get("to", "").strip()
+    message = body.get("message", "").strip()
+    if not sender_id or not message:
+        raise HTTPException(status_code=400, detail="Missing 'to' or 'message'")
+    
+    tagged = f"[ADMIN] {message}"
+    send_whatsapp_message(sender_id, message)
+    database.save_message(sender_id, "assistant", tagged)
+    print(f"[MobileApp] {user['username']} sent to +{sender_id}: {message[:60]}")
+    return {"ok": True}
+
+
+@app.get("/api/app/conversations")
+def api_app_conversations(user: dict = Depends(verify_user)):
+    """JSON conversations list for mobile app."""
+    conversations = database.get_all_conversations()
+    result = []
+    for c in conversations:
+        result.append({
+            "sender_id": c.get("sender_id"),
+            "display_name": c.get("display_name") or c.get("sender_id"),
+            "last_message": c.get("last_message") or "",
+            "last_role": c.get("last_role") or "",
+            "last_active": c.get("last_active"),
+            "unread_count": c.get("unread_count", 0),
+            "message_count": c.get("message_count", 0),
+        })
+    return {"conversations": result}
