@@ -99,7 +99,7 @@ def _generate_with_groq(messages: list) -> str | None:
         now_iso = datetime.now(timezone.utc).isoformat()
         try:
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=500,
