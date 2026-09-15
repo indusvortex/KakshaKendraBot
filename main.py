@@ -23,7 +23,7 @@ from utils import (
     send_whatsapp_media,
     ai_stats,
     _get_groq_clients,
-    _get_gemini_client,
+    _get_openrouter_key,
     _get_cerebras_client,
     DEFAULT_TEMPLATES,
     get_system_instruction,
@@ -4007,37 +4007,55 @@ def admin_api_key_health_check(user: dict = Depends(verify_admin)):
                 "model": "openai/gpt-oss-120b",
             })
 
-    # Test Gemini
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    if gemini_key:
+    # Test OpenRouter
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    if openrouter_key:
         t0 = _time.time()
         try:
-            gclient = _get_gemini_client()
-            if gclient:
-                gclient.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=[{"role": "user", "parts": [{"text": "Hi"}]}],
-                )
-                latency = round((_time.time() - t0) * 1000)
+            import httpx
+            resp = httpx.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "nvidia/nemotron-3-super-120b-a12b:free",
+                    "messages": [{"role": "user", "content": "Hi"}],
+                    "max_tokens": 5,
+                },
+                timeout=15,
+            )
+            latency = round((_time.time() - t0) * 1000)
+            if resp.status_code == 200:
                 results.append({
-                    "provider": "Gemini",
-                    "label": "GEMINI_API_KEY",
-                    "key_preview": (gemini_key[:6] + "…" + gemini_key[-4:]) if len(gemini_key) > 12 else "***",
+                    "provider": "OpenRouter",
+                    "label": "OPENROUTER_API_KEY",
+                    "key_preview": (openrouter_key[:6] + "…" + openrouter_key[-4:]) if len(openrouter_key) > 12 else "***",
                     "status": "ok",
                     "message": f"Working ({latency}ms)",
-                    "model": "gemini-2.0-flash",
+                    "model": "nvidia/nemotron-3-super-120b-a12b:free",
                 })
             else:
-                results.append({"provider": "Gemini", "label": "GEMINI_API_KEY", "key_preview": "***", "status": "error", "message": "Client init failed", "model": "gemini-2.0-flash"})
+                err_msg = resp.json().get("error", {}).get("message", resp.text[:100]) if "application/json" in resp.headers.get("content-type", "") else resp.text[:100]
+                status = "invalid_key" if resp.status_code == 401 else ("rate_limited" if resp.status_code == 429 else "error")
+                results.append({
+                    "provider": "OpenRouter",
+                    "label": "OPENROUTER_API_KEY",
+                    "key_preview": (openrouter_key[:6] + "…" + openrouter_key[-4:]) if len(openrouter_key) > 12 else "***",
+                    "status": status,
+                    "message": f"HTTP {resp.status_code}: {err_msg[:60]}",
+                    "model": "nvidia/nemotron-3-super-120b-a12b:free",
+                })
         except Exception as e:
             latency = round((_time.time() - t0) * 1000)
             results.append({
-                "provider": "Gemini",
-                "label": "GEMINI_API_KEY",
-                "key_preview": (gemini_key[:6] + "…" + gemini_key[-4:]) if len(gemini_key) > 12 else "***",
+                "provider": "OpenRouter",
+                "label": "OPENROUTER_API_KEY",
+                "key_preview": (openrouter_key[:6] + "…" + openrouter_key[-4:]) if len(openrouter_key) > 12 else "***",
                 "status": "error",
                 "message": str(e)[:100],
-                "model": "gemini-2.0-flash",
+                "model": "nvidia/nemotron-3-super-120b-a12b:free",
             })
 
     # Test Cerebras
@@ -4150,7 +4168,7 @@ def admin_settings(user: str = Depends(verify_admin)):
 
     # AI provider key counts
     groq_keys = len(_get_groq_clients())
-    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+    has_openrouter = bool(os.getenv("OPENROUTER_API_KEY"))
     has_cerebras = bool(os.getenv("CEREBRAS_API_KEY"))
 
     # Provider health (online if last success within 1 hour)
@@ -4169,7 +4187,7 @@ def admin_settings(user: str = Depends(verify_admin)):
             return ("⚪ Unknown", "#7d8e9c")
 
     groq_status, groq_color = provider_status(ai_stats.get("last_groq_success_at"))
-    gemini_status, gemini_color = provider_status(ai_stats.get("last_gemini_success_at"))
+    openrouter_status, openrouter_color = provider_status(ai_stats.get("last_openrouter_success_at"))
     cerebras_status, cerebras_color = provider_status(ai_stats.get("last_cerebras_success_at"))
 
     # Token cost estimate (very rough): Groq paid ~$0.59/M input, $0.79/M output
@@ -4181,11 +4199,11 @@ def admin_settings(user: str = Depends(verify_admin)):
     # AI usage breakdown for the bar chart
     total_ai = (
         ai_stats["groq_success"]
-        + ai_stats["gemini_success"]
+        + ai_stats["openrouter_success"]
         + ai_stats["cerebras_success"]
     ) or 1
     groq_pct = (ai_stats["groq_success"] / total_ai) * 100
-    gemini_pct = (ai_stats["gemini_success"] / total_ai) * 100
+    openrouter_pct = (ai_stats["openrouter_success"] / total_ai) * 100
     cerebras_pct = (ai_stats["cerebras_success"] / total_ai) * 100
 
     return f"""
@@ -4375,12 +4393,12 @@ def admin_settings(user: str = Depends(verify_admin)):
                     <div class="small">{ai_stats["all_failed"]} fully failed · {total_ai} succeeded</div>
                     <div class="bar">
                         <div style="width:{groq_pct}%;background:#5288c1" title="Groq"></div>
-                        <div style="width:{gemini_pct}%;background:#10b981" title="Gemini"></div>
+                        <div style="width:{openrouter_pct}%;background:#10b981" title="OpenRouter"></div>
                         <div style="width:{cerebras_pct}%;background:#f59e0b" title="Cerebras"></div>
                     </div>
                     <div class="small" style="display:flex;gap:12px;margin-top:8px">
                         <span><span style="color:#5288c1">●</span> Groq {ai_stats["groq_success"]}</span>
-                        <span><span style="color:#10b981">●</span> Gemini {ai_stats["gemini_success"]}</span>
+                        <span><span style="color:#10b981">●</span> OpenRouter {ai_stats["openrouter_success"]}</span>
                         <span><span style="color:#f59e0b">●</span> Cerebras {ai_stats["cerebras_success"]}</span>
                     </div>
                 </div>
@@ -4401,16 +4419,16 @@ def admin_settings(user: str = Depends(verify_admin)):
                         <span class="val" style="color:{groq_color}">{groq_status}</span>
                     </div>
                     <div class="row">
-                        <span class="label">Gemini <span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981">{"On" if has_gemini else "Off"}</span></span>
-                        <span class="val" style="color:{gemini_color}">{gemini_status}</span>
+                        <span class="label">OpenRouter <span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981">{"On" if has_openrouter else "Off"}</span></span>
+                        <span class="val" style="color:{openrouter_color}">{openrouter_status}</span>
                     </div>
                     <div class="row">
                         <span class="label">Cerebras <span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">{"On" if has_cerebras else "Off"}</span></span>
                         <span class="val" style="color:{cerebras_color}">{cerebras_status}</span>
                     </div>
                     <div class="row">
-                        <span class="label">Failures (Groq · Gemini · Cerebras)</span>
-                        <span class="val">{ai_stats["groq_fail"]} · {ai_stats["gemini_fail"]} · {ai_stats["cerebras_fail"]}</span>
+                        <span class="label">Failures (Groq · OpenRouter · Cerebras)</span>
+                        <span class="val">{ai_stats["groq_fail"]} · {ai_stats["openrouter_fail"]} · {ai_stats["cerebras_fail"]}</span>
                     </div>
                 </div>
 
@@ -4653,7 +4671,7 @@ function createLeadCallReminder(d, inbound) {{
                         <a href="https://console.groq.com/settings/usage" target="_blank" class="label" style="color:#5288c1">Groq Usage ↗</a>
                     </div>
                     <div class="row">
-                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="label" style="color:#5288c1">Gemini API Keys ↗</a>
+                        <a href="https://openrouter.ai/keys" target="_blank" class="label" style="color:#5288c1">OpenRouter API Keys ↗</a>
                     </div>
                     <div class="row">
                         <a href="https://cloud.cerebras.ai/platform/inference/limits" target="_blank" class="label" style="color:#5288c1">Cerebras Limits ↗</a>
@@ -4745,7 +4763,7 @@ function createLeadCallReminder(d, inbound) {{
                     for (const r of data.results) {{
                         if (r.provider !== currentProvider) {{
                             currentProvider = r.provider;
-                            const provColors = {{Groq: '#5288c1', Gemini: '#10b981', Cerebras: '#f59e0b'}};
+                            const provColors = {{Groq: '#5288c1', OpenRouter: '#10b981', Cerebras: '#f59e0b'}};
                             const c = provColors[r.provider] || '#5288c1';
                             html += `<div style="margin-top:${{html ? '16' : '0'}}px;margin-bottom:8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:${{c}};display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:${{c}};display:inline-block"></span>${{r.provider}}</div>`;
                         }}

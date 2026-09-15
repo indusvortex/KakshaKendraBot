@@ -17,13 +17,13 @@ ai_stats = {
     "total_calls": 0,
     "groq_success": 0,
     "groq_fail": 0,
-    "gemini_success": 0,
-    "gemini_fail": 0,
+    "openrouter_success": 0,
+    "openrouter_fail": 0,
     "cerebras_success": 0,
     "cerebras_fail": 0,
     "all_failed": 0,
     "last_groq_success_at": None,
-    "last_gemini_success_at": None,
+    "last_openrouter_success_at": None,
     "last_cerebras_success_at": None,
     # Approx token usage (input + output)
     "tokens_used_estimate": 0,
@@ -139,66 +139,65 @@ def _generate_with_groq(messages: list) -> str | None:
     return None
 
 
-# Gemini client — lazy-loaded fallback when Groq is rate-limited
-_gemini_client = None
+# OpenRouter client — fallback when Groq is rate-limited
+# Uses httpx to call OpenRouter's OpenAI-compatible API
+_openrouter_api_key: str | None = None
 
-def _get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None:
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return None
-        try:
-            from google import genai
-            _gemini_client = genai.Client(api_key=api_key)
-        except ImportError:
-            print("google-genai package not installed; Gemini fallback unavailable.")
-            return None
-    return _gemini_client
+def _get_openrouter_key() -> str | None:
+    global _openrouter_api_key
+    if _openrouter_api_key is None:
+        _openrouter_api_key = os.getenv("OPENROUTER_API_KEY") or ""
+        if _openrouter_api_key:
+            print(f"[OpenRouter] API key loaded.")
+        else:
+            print("[OpenRouter] No OPENROUTER_API_KEY configured.")
+    return _openrouter_api_key or None
 
 
-def _generate_with_gemini(messages: list) -> str | None:
-    """Fallback to Gemini when Groq fails. Returns None if Gemini is also unavailable."""
-    client = _get_gemini_client()
-    if client is None:
+def _generate_with_openrouter(messages: list) -> str | None:
+    """Fallback to OpenRouter when Groq fails. Returns None if unavailable."""
+    api_key = _get_openrouter_key()
+    if not api_key:
         return None
 
-    # Gemini has no "system" role — prepend system instruction to the first user message
-    system_text = ""
-    contents = []
-    for msg in messages:
-        if msg["role"] == "system":
-            system_text = msg["content"]
-        elif msg["role"] == "user":
-            user_text = msg["content"]
-            if system_text and not contents:
-                user_text = f"{system_text}\n\n---\n\n{user_text}"
-                system_text = ""
-            contents.append({"role": "user", "parts": [{"text": user_text}]})
-        elif msg["role"] == "assistant":
-            contents.append({"role": "model", "parts": [{"text": msg["content"]}]})
-
-    # gemini-2.0-flash has higher free-tier limits than 2.5-flash:
-    # 15 RPM vs 5 RPM, and 1500 RPD vs 250 RPD.
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=contents,
+        import httpx
+        response = httpx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "nvidia/nemotron-3-super-120b-a12b:free",
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 500,
+            },
+            timeout=30,
         )
-        print("[Gemini fallback] Response generated successfully.")
-        _bump_stat("gemini_success")
-        ai_stats["last_gemini_success_at"] = datetime.now(timezone.utc).isoformat()
-        usage = getattr(response, "usage_metadata", None)
-        if usage:
-            ai_stats["tokens_used_estimate"] += getattr(usage, "total_token_count", 0)
-        return response.text
+        if response.status_code == 200:
+            data = response.json()
+            text = data["choices"][0]["message"]["content"]
+            print("[OpenRouter fallback] Response generated successfully.")
+            _bump_stat("openrouter_success")
+            ai_stats["last_openrouter_success_at"] = datetime.now(timezone.utc).isoformat()
+            usage = data.get("usage", {})
+            if usage:
+                ai_stats["tokens_used_estimate"] += usage.get("total_tokens", 0)
+            return text
+        else:
+            err = response.json().get("error", {}).get("message", response.text[:100])
+            print(f"[OpenRouter fallback] HTTP {response.status_code}: {err}")
+            _bump_stat("openrouter_fail")
+            return None
     except Exception as e:
-        print(f"[Gemini fallback] Failed: {e}")
-        _bump_stat("gemini_fail")
+        print(f"[OpenRouter fallback] Failed: {e}")
+        _bump_stat("openrouter_fail")
         return None
 
 
-# Cerebras client — final fallback when Groq AND Gemini both fail
+# Cerebras client — final fallback when Groq AND OpenRouter both fail
 _cerebras_client = None
 
 def _get_cerebras_client():
@@ -957,7 +956,7 @@ Strict Constraints & Persona:
 def generate_ai_response(chat_history: list, current_message: str) -> str:
     """
     Generates an AI response with a 3-provider fallback chain:
-        Groq -> Gemini -> Cerebras
+        Groq -> OpenRouter -> Cerebras
     chat_history: past messages (role/content dicts), NOT including current_message.
     current_message: the new user message to respond to.
     """
@@ -971,13 +970,13 @@ def generate_ai_response(chat_history: list, current_message: str) -> str:
     groq_response = _generate_with_groq(messages)
     if groq_response:
         return groq_response
-    print("[Groq] All keys failed. Falling back to Gemini...")
+    print("[Groq] All keys failed. Falling back to OpenRouter...")
 
-    # ---------- 2. Fallback to Gemini ----------
-    gemini_response = _generate_with_gemini(messages)
-    if gemini_response:
-        return gemini_response
-    print("[Gemini] Failed. Falling back to Cerebras...")
+    # ---------- 2. Fallback to OpenRouter ----------
+    openrouter_response = _generate_with_openrouter(messages)
+    if openrouter_response:
+        return openrouter_response
+    print("[OpenRouter] Failed. Falling back to Cerebras...")
 
     # ---------- 3. Final fallback to Cerebras ----------
     cerebras_response = _generate_with_cerebras(messages)
