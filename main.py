@@ -23,6 +23,8 @@ from utils import (
     send_whatsapp_media,
     ai_stats,
     _get_groq_clients,
+    _get_gemini_client,
+    _get_cerebras_client,
     DEFAULT_TEMPLATES,
     get_system_instruction,
 )
@@ -1019,6 +1021,36 @@ security = HTTPBasic()
 class NotAuthenticatedException(Exception):
     pass
 
+# Login rate limiting — 5 attempts per IP, 30-minute lockout
+_login_attempts: dict = {}  # {ip: {"count": int, "locked_until": datetime|None}}
+
+def _check_login_rate_limit(ip: str) -> tuple[bool, int]:
+    """Returns (is_locked, remaining_seconds). Cleans up expired locks."""
+    now = datetime.now(timezone.utc)
+    info = _login_attempts.get(ip)
+    if not info:
+        return (False, 0)
+    if info.get("locked_until") and now < info["locked_until"]:
+        remaining = int((info["locked_until"] - now).total_seconds())
+        return (True, remaining)
+    # Lock expired — reset
+    if info.get("locked_until") and now >= info["locked_until"]:
+        _login_attempts.pop(ip, None)
+        return (False, 0)
+    return (False, 0)
+
+def _record_failed_login(ip: str):
+    """Records a failed attempt. Locks after 5 failures."""
+    now = datetime.now(timezone.utc)
+    info = _login_attempts.setdefault(ip, {"count": 0, "locked_until": None})
+    info["count"] += 1
+    if info["count"] >= 5:
+        info["locked_until"] = now + timedelta(minutes=30)
+
+def _clear_login_attempts(ip: str):
+    """Clears attempts after successful login."""
+    _login_attempts.pop(ip, None)
+
 def _check_admin(username, password) -> bool:
     return (
         secrets.compare_digest(username, ADMIN_USERNAME)
@@ -1306,14 +1338,37 @@ def login_page(request: Request, error: str = "", success: str = ""):
     """
 
 @app.post("/login")
-def login_post(username: str = Form(...), password: str = Form(...)):
+def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Check if IP is locked out
+    is_locked, remaining_secs = _check_login_rate_limit(client_ip)
+    if is_locked:
+        mins = remaining_secs // 60
+        return RedirectResponse(
+            url=f"/login?error=Too+many+failed+attempts.+Try+again+in+{mins}+minutes.",
+            status_code=303,
+        )
+    
     if _check_admin(username, password):
         role = "super_admin"
     elif _check_team(username, password):
         role = "team"
     else:
-        return RedirectResponse(url="/login?error=Invalid+credentials", status_code=303)
-        
+        _record_failed_login(client_ip)
+        info = _login_attempts.get(client_ip, {})
+        attempts_left = max(0, 5 - info.get("count", 0))
+        if attempts_left == 0:
+            return RedirectResponse(
+                url="/login?error=Account+locked+for+30+minutes+due+to+too+many+failed+attempts.",
+                status_code=303,
+            )
+        return RedirectResponse(
+            url=f"/login?error=Invalid+credentials.+{attempts_left}+attempts+remaining.",
+            status_code=303,
+        )
+    
+    _clear_login_attempts(client_ip)
     token = secrets.token_hex(32)
     database.set_state(f"session_{token}", role)
     response = RedirectResponse(url="/admin", status_code=303)
@@ -3904,6 +3959,124 @@ def _format_bytes(n: int) -> str:
     return f"{n / 1024 ** 3:.2f} GB"
 
 
+@app.get("/admin/api/key-health-check")
+def admin_api_key_health_check(user: dict = Depends(verify_admin)):
+    """Tests all AI provider keys and returns their status."""
+    import time as _time
+    results = []
+
+    # Test Groq keys
+    clients = _get_groq_clients()
+    keys_info = ai_stats.get("groq_keys", [])
+    for i, client in enumerate(clients):
+        label = keys_info[i]["label"] if i < len(keys_info) else f"GROQ_API_KEY_{i+1}"
+        preview = keys_info[i].get("key_preview", "***") if i < len(keys_info) else "***"
+        t0 = _time.time()
+        try:
+            resp = client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=5,
+            )
+            latency = round((_time.time() - t0) * 1000)
+            results.append({
+                "provider": "Groq",
+                "label": label,
+                "key_preview": preview,
+                "status": "ok",
+                "message": f"Working ({latency}ms)",
+                "model": "openai/gpt-oss-120b",
+            })
+        except Exception as e:
+            latency = round((_time.time() - t0) * 1000)
+            err = str(e)
+            if "401" in err or "invalid_api_key" in err.lower():
+                status, msg = "invalid_key", "Invalid API Key"
+            elif "429" in err or "rate_limit" in err.lower():
+                status, msg = "rate_limited", "Rate Limited"
+            elif "404" in err or "model_not_found" in err.lower():
+                status, msg = "model_error", "Model Not Found"
+            else:
+                status, msg = "error", err[:100]
+            results.append({
+                "provider": "Groq",
+                "label": label,
+                "key_preview": preview,
+                "status": status,
+                "message": msg,
+                "model": "openai/gpt-oss-120b",
+            })
+
+    # Test Gemini
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        t0 = _time.time()
+        try:
+            gclient = _get_gemini_client()
+            if gclient:
+                gclient.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=[{"role": "user", "parts": [{"text": "Hi"}]}],
+                )
+                latency = round((_time.time() - t0) * 1000)
+                results.append({
+                    "provider": "Gemini",
+                    "label": "GEMINI_API_KEY",
+                    "key_preview": (gemini_key[:6] + "…" + gemini_key[-4:]) if len(gemini_key) > 12 else "***",
+                    "status": "ok",
+                    "message": f"Working ({latency}ms)",
+                    "model": "gemini-2.0-flash",
+                })
+            else:
+                results.append({"provider": "Gemini", "label": "GEMINI_API_KEY", "key_preview": "***", "status": "error", "message": "Client init failed", "model": "gemini-2.0-flash"})
+        except Exception as e:
+            latency = round((_time.time() - t0) * 1000)
+            results.append({
+                "provider": "Gemini",
+                "label": "GEMINI_API_KEY",
+                "key_preview": (gemini_key[:6] + "…" + gemini_key[-4:]) if len(gemini_key) > 12 else "***",
+                "status": "error",
+                "message": str(e)[:100],
+                "model": "gemini-2.0-flash",
+            })
+
+    # Test Cerebras
+    cerebras_key = os.getenv("CEREBRAS_API_KEY")
+    if cerebras_key:
+        t0 = _time.time()
+        try:
+            cclient = _get_cerebras_client()
+            if cclient:
+                cclient.chat.completions.create(
+                    model="llama3.1-8b",
+                    messages=[{"role": "user", "content": "Hi"}],
+                    max_tokens=5,
+                )
+                latency = round((_time.time() - t0) * 1000)
+                results.append({
+                    "provider": "Cerebras",
+                    "label": "CEREBRAS_API_KEY",
+                    "key_preview": (cerebras_key[:6] + "…" + cerebras_key[-4:]) if len(cerebras_key) > 12 else "***",
+                    "status": "ok",
+                    "message": f"Working ({latency}ms)",
+                    "model": "llama3.1-8b",
+                })
+            else:
+                results.append({"provider": "Cerebras", "label": "CEREBRAS_API_KEY", "key_preview": "***", "status": "error", "message": "Client init failed", "model": "llama3.1-8b"})
+        except Exception as e:
+            latency = round((_time.time() - t0) * 1000)
+            results.append({
+                "provider": "Cerebras",
+                "label": "CEREBRAS_API_KEY",
+                "key_preview": (cerebras_key[:6] + "…" + cerebras_key[-4:]) if len(cerebras_key) > 12 else "***",
+                "status": "error",
+                "message": str(e)[:100],
+                "model": "llama3.1-8b",
+            })
+
+    return {"results": results}
+
+
 def _render_groq_keys_card() -> str:
     """Renders a card showing per-key Groq status: success/rate-limit/idle."""
     keys = ai_stats.get("groq_keys", [])
@@ -4487,6 +4660,18 @@ function createLeadCallReminder(d, inbound) {{
                     </div>
                 </div>
 
+                <!-- ================= API Key Health Check ================= -->
+                <div class="card" style="grid-column: span 2">
+                    <h3>🔍 API Key Health Check</h3>
+                    <p style="font-size:13px;color:#95a3b1;margin:0 0 12px">
+                        Test all configured AI provider keys right now. This sends a tiny test message to each provider.
+                    </p>
+                    <button onclick="runHealthCheck()" id="hc-btn" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;padding:12px 24px;border-radius:22px;cursor:pointer;font-weight:600;font-size:14px;box-shadow:0 4px 12px rgba(245,158,11,0.3);transition:all 0.2s">
+                        🩺 Run Health Check
+                    </button>
+                    <div id="hc-results" style="margin-top:16px;display:none"></div>
+                </div>
+
             </div>
 
             <div style="margin-top: 16px; text-align: center; color: #7d8e9c; font-size: 12px">
@@ -4540,6 +4725,66 @@ function createLeadCallReminder(d, inbound) {{
                 const res = await fetch('/admin/push/test', {{ method: 'POST' }});
                 if (res.ok) alert('✅ Test push sent — check for the notification!');
                 else alert('❌ Test failed. Check Railway logs.');
+            }};
+
+            window.runHealthCheck = async function() {{
+                const btn = document.getElementById('hc-btn');
+                const box = document.getElementById('hc-results');
+                btn.disabled = true;
+                btn.textContent = '⏳ Testing all keys...';
+                btn.style.opacity = '0.6';
+                box.style.display = 'block';
+                box.innerHTML = '<div style="text-align:center;padding:20px;color:#95a3b1"><div style="font-size:24px;animation:spin 1s linear infinite;display:inline-block">⏳</div><br>Testing each key... this may take 30-60 seconds</div>';
+                
+                try {{
+                    const res = await fetch('/admin/api/key-health-check');
+                    const data = await res.json();
+                    let html = '';
+                    let currentProvider = '';
+                    
+                    for (const r of data.results) {{
+                        if (r.provider !== currentProvider) {{
+                            currentProvider = r.provider;
+                            const provColors = {{Groq: '#5288c1', Gemini: '#10b981', Cerebras: '#f59e0b'}};
+                            const c = provColors[r.provider] || '#5288c1';
+                            html += `<div style="margin-top:${{html ? '16' : '0'}}px;margin-bottom:8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:${{c}};display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:${{c}};display:inline-block"></span>${{r.provider}}</div>`;
+                        }}
+                        
+                        let statusIcon, statusColor, statusBg;
+                        if (r.status === 'ok') {{
+                            statusIcon = '✅'; statusColor = '#10b981'; statusBg = 'rgba(16,185,129,0.08)';
+                        }} else if (r.status === 'rate_limited') {{
+                            statusIcon = '🟡'; statusColor = '#f59e0b'; statusBg = 'rgba(245,158,11,0.08)';
+                        }} else if (r.status === 'invalid_key') {{
+                            statusIcon = '🔴'; statusColor = '#ef4444'; statusBg = 'rgba(239,68,68,0.08)';
+                        }} else {{
+                            statusIcon = '⚠️'; statusColor = '#ef4444'; statusBg = 'rgba(239,68,68,0.08)';
+                        }}
+                        
+                        html += `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:${{statusBg}};border:1px solid ${{statusColor}}22;border-radius:12px;margin-bottom:6px;transition:all 0.2s">
+                            <div style="font-size:20px;flex-shrink:0">${{statusIcon}}</div>
+                            <div style="flex:1;min-width:0">
+                                <div style="font-weight:600;font-size:13px;color:#fff">${{r.label}}</div>
+                                <div style="font-size:11px;color:#7d8e9c;font-family:monospace">${{r.key_preview}} · model: ${{r.model}}</div>
+                            </div>
+                            <div style="text-align:right;flex-shrink:0">
+                                <div style="color:${{statusColor}};font-weight:600;font-size:13px">${{r.message}}</div>
+                            </div>
+                        </div>`;
+                    }}
+                    
+                    if (!data.results.length) {{
+                        html = '<div style="text-align:center;padding:20px;color:#7d8e9c">No API keys configured.</div>';
+                    }}
+                    
+                    box.innerHTML = html;
+                }} catch (e) {{
+                    box.innerHTML = `<div style="color:#ef4444;padding:12px;background:rgba(239,68,68,0.1);border-radius:10px">❌ Failed: ${{e.message}}</div>`;
+                }} finally {{
+                    btn.disabled = false;
+                    btn.textContent = '🩺 Run Health Check';
+                    btn.style.opacity = '1';
+                }}
             }};
         </script>
     </body>
