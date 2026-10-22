@@ -42,13 +42,18 @@ SERVER_STARTED_AT = datetime.now(timezone.utc)
 VAPID_KEYS_FILE = Path(database.DB_PATH).parent / "vapid_keys.json"
 
 
+DEFAULT_VAPID_PUBLIC = "BFtyDiZenx2iyNsCrvQCbLkM2qqKnZz5VF7VOz11xoMve-QZv0nhM5jnprPJyBM_M_BtLcMWESvijfU3NAnFJw0"
+DEFAULT_VAPID_PRIVATE = "_eDusOvShOeKYo8cSMIVAds7W99tUvp1sVUWJTT_tks"
+
+
 def _get_or_create_vapid_keys() -> tuple[str, str]:
     """
-    Returns (public_key_b64url, private_key_pem).
+    Returns (public_key_b64url, private_key_pem_or_b64).
     Order of preference:
       1) VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY env vars
       2) Cached keys on disk (persistent volume)
-      3) Generate a new pair and persist to disk
+      3) Consistent default keys (prevents subscription invalidation across redeploys)
+      4) Generate a new pair and persist to disk
     """
     pub_env = os.getenv("VAPID_PUBLIC_KEY")
     priv_env = os.getenv("VAPID_PRIVATE_KEY")
@@ -61,6 +66,13 @@ def _get_or_create_vapid_keys() -> tuple[str, str]:
             return data["public"], data["private"]
         except Exception:
             pass
+
+    if DEFAULT_VAPID_PUBLIC and DEFAULT_VAPID_PRIVATE:
+        try:
+            VAPID_KEYS_FILE.write_text(json.dumps({"public": DEFAULT_VAPID_PUBLIC, "private": DEFAULT_VAPID_PRIVATE}))
+        except Exception:
+            pass
+        return DEFAULT_VAPID_PUBLIC, DEFAULT_VAPID_PRIVATE
 
     # Generate fresh ECDSA P-256 key pair
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -107,7 +119,8 @@ def send_web_push(title: str, body: str, url: str = "/admin", tag: str = "kk-def
         "body": body,
         "url": url,
         "tag": tag,
-        "icon": "/favicon.ico",
+        "icon": "/static/favicon.png",
+        "badge": "/static/favicon.png",
     })
 
     subs = database.get_push_subscriptions(role)
@@ -1882,16 +1895,16 @@ async def handle_whatsapp_message(request: Request):
                                         body=f"{contact_name or '+' + sender_id} ({detected_class or 'class TBD'}): {message_text[:60]}",
                                         url=f"/admin?chat={sender_id}",
                                         tag=f"new-{sender_id}",
-                                        role="team",
+                                        role=None,
                                     )
                                 else:
-                                    # Team is offline — escalate immediately to admin via push
+                                    # Team is offline — notify all subscribers immediately via push
                                     send_web_push(
                                         title="🚨 New Lead (Team OFFLINE!)",
-                                        body=f"{contact_name or '+' + sender_id} ({detected_class or 'class TBD'}) — team is logged out, you handle this!",
+                                        body=f"{contact_name or '+' + sender_id} ({detected_class or 'class TBD'}) — team is logged out, please handle!",
                                         url=f"/admin?chat={sender_id}",
                                         tag=f"new-offline-{sender_id}",
-                                        role="super_admin",
+                                        role=None,
                                     )
 
                                 # Sync new lead to Google Sheets
@@ -3177,10 +3190,28 @@ def admin_dashboard(
                 <div class="sidebar-header">
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
                         <div class="sidebar-title">🎓 Kaksha Kendra Bot {unread_html}</div>
-                        {('<a href="/admin/settings" title="Bot Health & Settings" style="color:#7d8e9c;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s">⚙️</a>') if user.get("role") == "super_admin" else ('<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid rgba(245,158,11,0.3)">TEAM</span>')}
-                        <a href="/logout" title="Logout" style="color:#ef4444;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s;margin-left:8px;">🚪</a>
+                        <div style="display:flex;align-items:center;gap:6px">
+                            <button id="header-push-btn" onclick="handleNotificationClick()" title="Phone Notifications" style="position:relative;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#e6edf3;border-radius:50%;width:34px;height:34px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:16px;">
+                                🔔
+                                <span id="push-status-dot" style="position:absolute;top:2px;right:2px;width:9px;height:9px;border-radius:50%;background:#f59e0b;border:2px solid #1a2535"></span>
+                            </button>
+                            {('<a href="/admin/settings" title="Bot Health & Settings" style="color:#7d8e9c;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s">⚙️</a>') if user.get("role") == "super_admin" else ('<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid rgba(245,158,11,0.3)">TEAM</span>')}
+                            <a href="/logout" title="Logout" style="color:#ef4444;text-decoration:none;width:34px;height:34px;border-radius:50%;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:all 0.2s;">🚪</a>
+                        </div>
                     </div>
                     <div class="sidebar-meta" style="margin-top:6px">{len(conversations)} chats · {user.get("username", "?")} ({user.get("role", "?").replace("_", " ")})</div>
+                </div>
+                <div id="push-banner" style="display:none;margin:8px 12px 4px;padding:10px 12px;background:linear-gradient(135deg,rgba(82,136,193,0.18),rgba(59,130,246,0.12));border:1px solid rgba(82,136,193,0.35);border-radius:10px;font-size:12px;line-height:1.4">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <span style="font-size:18px">🔔</span>
+                            <div>
+                                <strong style="color:#fff;display:block">Enable Phone Alerts</strong>
+                                <span style="color:#95a3b1;font-size:11px">Get sound alerts on this phone when students message</span>
+                            </div>
+                        </div>
+                        <button onclick="enablePhoneAlerts()" style="background:#5288c1;color:#fff;border:none;padding:7px 13px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">Turn On</button>
+                    </div>
                 </div>
                 {_render_pending_leads_panel()}
                 <div class="search-box">
@@ -3265,19 +3296,22 @@ def admin_dashboard(
             }}
 
             // ============================================================
-            // WEB PUSH (background, even when tab closed) — service worker
+            // WEB PUSH & PHONE NOTIFICATIONS (Foreground + Background)
             // ============================================================
+            let swRegistration = null;
+
             async function registerPushSW() {{
-                if (!('serviceWorker' in navigator) || !('PushManager' in window)) {{
-                    console.warn('Push not supported in this browser');
-                    return;
+                if (!('serviceWorker' in navigator)) {{
+                    console.warn('ServiceWorker not supported in this browser');
+                    return null;
                 }}
                 try {{
                     const reg = await navigator.serviceWorker.register('/sw.js', {{ scope: '/' }});
-                    console.log('SW registered');
+                    swRegistration = reg;
                     return reg;
                 }} catch (e) {{
                     console.error('SW registration failed:', e);
+                    return null;
                 }}
             }}
 
@@ -3288,49 +3322,158 @@ def admin_dashboard(
                 return Uint8Array.from(raw, c => c.charCodeAt(0));
             }}
 
-            window.subscribeToPush = async function() {{
-                const reg = await registerPushSW();
-                if (!reg) return alert('Browser does not support push notifications');
-                const perm = await Notification.requestPermission();
-                if (perm !== 'granted') return alert('Permission denied — enable notifications in browser settings');
+            // Two-tone pleasant notification chime using Web Audio API (zero network, works on mobile)
+            function playNotificationChime() {{
+                try {{
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioCtx) return;
+                    const ctx = new AudioCtx();
+                    const now = ctx.currentTime;
+                    
+                    const osc1 = ctx.createOscillator();
+                    const gain1 = ctx.createGain();
+                    osc1.type = 'sine';
+                    osc1.frequency.setValueAtTime(587.33, now); // D5
+                    gain1.gain.setValueAtTime(0.3, now);
+                    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                    osc1.connect(gain1);
+                    gain1.connect(ctx.destination);
+                    osc1.start(now);
+                    osc1.stop(now + 0.35);
 
-                const keyRes = await fetch('/admin/push/vapid-key');
-                const {{ publicKey }} = await keyRes.json();
-
-                let sub = await reg.pushManager.getSubscription();
-                if (!sub) {{
-                    sub = await reg.pushManager.subscribe({{
-                        userVisibleOnly: true,
-                        applicationServerKey: urlB64ToUint8Array(publicKey),
-                    }});
-                }}
-
-                await fetch('/admin/push/subscribe', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify(sub.toJSON()),
-                }});
-                alert('✅ Notifications enabled! You will be alerted even when this tab is closed.');
-            }};
-
-            // Auto-register service worker silently on every page load
-            registerPushSW();
-
-            // ============================================================
-            // FOREGROUND POLLING (for when tab IS open)
-            // ============================================================
-            const SOUND_DATA_URI = "data:audio/wav;base64,UklGRiQEAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAEAAD//w==" +
-                "AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA";
-            const originalTitle = document.title;
-            let unseenCount = 0;
-
-            // Step 1 — Ask permission on first interaction
-            function ensurePermission() {{
-                if ('Notification' in window && Notification.permission === 'default') {{
-                    Notification.requestPermission();
+                    const osc2 = ctx.createOscillator();
+                    const gain2 = ctx.createGain();
+                    osc2.type = 'sine';
+                    osc2.frequency.setValueAtTime(880, now + 0.12); // A5
+                    gain2.gain.setValueAtTime(0.35, now + 0.12);
+                    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+                    osc2.connect(gain2);
+                    gain2.connect(ctx.destination);
+                    osc2.start(now + 0.12);
+                    osc2.stop(now + 0.55);
+                }} catch(e) {{
+                    console.warn('Audio chime error:', e);
                 }}
             }}
-            document.addEventListener('click', ensurePermission, {{ once: true }});
+
+            async function syncSubscriptionToBackend(sub) {{
+                try {{
+                    await fetch('/admin/push/subscribe', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify(sub.toJSON()),
+                    }});
+                }} catch(e) {{}}
+            }}
+
+            async function autoSubscribePush(reg) {{
+                try {{
+                    if (!('PushManager' in window)) return;
+                    const keyRes = await fetch('/admin/push/vapid-key');
+                    const {{ publicKey }} = await keyRes.json();
+                    let sub = await reg.pushManager.getSubscription();
+                    if (!sub) {{
+                        sub = await reg.pushManager.subscribe({{
+                            userVisibleOnly: true,
+                            applicationServerKey: urlB64ToUint8Array(publicKey),
+                        }});
+                    }}
+                    await syncSubscriptionToBackend(sub);
+                    updatePushUI('active');
+                }} catch(e) {{
+                    console.warn('Auto-subscribe error:', e);
+                }}
+            }}
+
+            function updatePushUI(status) {{
+                const dot = document.getElementById('push-status-dot');
+                const banner = document.getElementById('push-banner');
+                if (status === 'active') {{
+                    if (dot) dot.style.background = '#10b981'; // Green
+                    if (banner) banner.style.display = 'none';
+                }} else if (status === 'blocked') {{
+                    if (dot) dot.style.background = '#ef4444'; // Red
+                    if (banner) {{
+                        banner.style.display = 'block';
+                        banner.innerHTML = '<div style="color:#ef4444;font-size:11px">⚠️ Notifications are blocked in browser settings. Please allow notifications for this site to receive phone alerts.</div>';
+                    }}
+                }} else {{
+                    if (dot) dot.style.background = '#f59e0b'; // Amber
+                    if (banner) banner.style.display = 'block';
+                }}
+            }}
+
+            async function checkPushStatus() {{
+                if (!('serviceWorker' in navigator) || !('Notification' in window)) {{
+                    updatePushUI('unsupported');
+                    return;
+                }}
+                if (Notification.permission === 'denied') {{
+                    updatePushUI('blocked');
+                    return;
+                }}
+                if (Notification.permission === 'granted') {{
+                    updatePushUI('active');
+                    const reg = await registerPushSW();
+                    if (reg) autoSubscribePush(reg);
+                    return;
+                }}
+                updatePushUI('prompt');
+            }}
+
+            window.enablePhoneAlerts = async function() {{
+                if (!('serviceWorker' in navigator) || !('Notification' in window)) {{
+                    alert('Push notifications are not supported on this browser.');
+                    return;
+                }}
+                const reg = await registerPushSW();
+                if (!reg) {{
+                    alert('Service Worker registration failed.');
+                    return;
+                }}
+                const perm = await Notification.requestPermission();
+                if (perm !== 'granted') {{
+                    alert('Permission denied. Please enable notifications in your browser settings.');
+                    checkPushStatus();
+                    return;
+                }}
+                await autoSubscribePush(reg);
+                playNotificationChime();
+                alert('✅ Phone alerts activated! You will receive notifications even when this app is closed.');
+                checkPushStatus();
+            }};
+
+            window.subscribeToPush = window.enablePhoneAlerts;
+
+            window.handleNotificationClick = async function() {{
+                if (window.Notification && Notification.permission === 'granted') {{
+                    const testNow = confirm('🔔 Notifications are ACTIVE on this device!\n\nWould you like to send a test alert to this phone right now?');
+                    if (testNow) {{
+                        playNotificationChime();
+                        try {{
+                            const res = await fetch('/admin/push/test', {{ method: 'POST' }});
+                            if (res.ok) {{
+                                alert('🧪 Test notification sent! Check your notification bar / lock screen.');
+                            }} else {{
+                                alert('Error sending test notification.');
+                            }}
+                        }} catch(e) {{
+                            alert('Failed to send test: ' + e);
+                        }}
+                    }}
+                }} else {{
+                    enablePhoneAlerts();
+                }}
+            }};
+
+            // Check push status on page load and visibility change
+            registerPushSW().then(checkPushStatus);
+            document.addEventListener('visibilitychange', () => {{
+                if (document.visibilityState === 'visible') checkPushStatus();
+            }});
+
+            const originalTitle = document.title;
+            let unseenCount = 0;
 
             // Step 2 — Poll for new students and unseen messages every 5 seconds
             async function pollNewChats() {{
@@ -3423,27 +3566,37 @@ def admin_dashboard(
             }}
 
             function showNotification(title, body, senderId) {{
-                if ('Notification' in window && Notification.permission === 'granted') {{
-                    const n = new Notification(title, {{
+                // Always play audible two-tone chime
+                playNotificationChime();
+
+                // Cross-platform notification display (Android Chrome + Desktop)
+                if ('serviceWorker' in navigator && swRegistration) {{
+                    swRegistration.showNotification(title, {{
                         body: body,
-                        icon: '/favicon.ico',
+                        icon: '/static/favicon.png',
+                        badge: '/static/favicon.png',
                         tag: 'kk-' + senderId,
-                        requireInteraction: false,
-                        silent: false,
-                    }});
-                    n.onclick = function() {{
-                        window.focus();
-                        window.location.href = '/admin?chat=' + senderId;
-                        n.close();
-                    }};
-                    setTimeout(() => n.close(), 8000);
+                        data: {{ url: '/admin?chat=' + senderId }},
+                        renotify: true,
+                        vibrate: [200, 100, 200]
+                    }}).catch(e => console.warn('SW notification error:', e));
+                }} else if ('Notification' in window && Notification.permission === 'granted') {{
+                    try {{
+                        const n = new Notification(title, {{
+                            body: body,
+                            icon: '/static/favicon.png',
+                            tag: 'kk-' + senderId,
+                        }});
+                        n.onclick = function() {{
+                            window.focus();
+                            window.location.href = '/admin?chat=' + senderId;
+                            n.close();
+                        }};
+                        setTimeout(() => n.close(), 8000);
+                    }} catch (e) {{
+                        console.warn('Desktop notification error:', e);
+                    }}
                 }}
-                // Always play sound (works even without notification permission)
-                try {{
-                    const audio = new Audio(SOUND_DATA_URI);
-                    audio.volume = 0.6;
-                    audio.play().catch(() => {{}});
-                }} catch (e) {{}}
             }}
 
             // Flash the browser tab title when there are unseen messages
@@ -5611,13 +5764,13 @@ self.addEventListener('push', event => {
     event.waitUntil(
         self.registration.showNotification(data.title, {
             body: data.body || '',
-            icon: data.icon || '/favicon.ico',
-            badge: data.icon || '/favicon.ico',
+            icon: data.icon || '/static/favicon.png',
+            badge: data.badge || '/static/favicon.png',
             data: { url: data.url || '/admin' },
             tag: data.tag || 'kk-notification',
             renotify: true,
             requireInteraction: false,
-            vibrate: [200, 100, 200]
+            vibrate: [300, 100, 300, 100, 300]
         })
     );
 });
@@ -5638,7 +5791,14 @@ self.addEventListener('notificationclick', event => {
     );
 });
 """
-    return Response(content=js, media_type="application/javascript")
+    return Response(
+        content=js,
+        media_type="application/javascript",
+        headers={
+            "Service-Worker-Allowed": "/",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+    )
 
 
 @app.get("/manifest.json")
@@ -5718,13 +5878,14 @@ async def push_unsubscribe(request: Request, user: dict = Depends(verify_user)):
 
 
 @app.post("/admin/push/test")
-def push_test(user: str = Depends(verify_admin)):
-    """Send a test push to verify everything works."""
+def push_test(user: dict = Depends(verify_user)):
+    """Send a test push to verify everything works for both admin and team."""
     send_web_push(
         title="🎓 Test Notification",
-        body="If you see this, push notifications work!",
+        body=f"Hello {user.get('username', 'Admin')}! Phone notifications are working.",
         url="/admin",
         tag="kk-test",
+        role=None,
     )
     return {"status": "sent"}
 
